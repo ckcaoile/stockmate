@@ -185,9 +185,7 @@ export default function POSTab({ products, customers, sales, profile, T }) {
         cashierName:profile?.name||"Staff", subtotal:finalSub, discount, total:finalTotal,
         paymentMethod:method, amountTendered:tendered, changeAmount:change,
       };
-      const result = await sales.createSale(saleData, cart, products.data);
-      // Fetch full sale with items for receipt
-      const { data:fullSale } = await (window._supabase||window.supabase||supabase).from("sales").select("*, sale_items(*)").eq("id",saleId).single().catch(()=>({data:null}));
+      await sales.createSale(saleData, cart, products.data);
       setLastSale({ ...saleData, date:new Date().toISOString().split("T")[0], time:new Date().toLocaleTimeString(), items: cart.map(it=>({ product_name:it.name.split(" (SN:")[0], item_type:it.type, quantity:it.qty, price:it.price, subtotal:it.price*it.qty, serial_number:it.serial, service:it.service, box_number:it.boxNumber, month_year:it.monthYear })) });
       setCart([]); setDiscount(0); setSelCustomer(null); setCustSearch(""); setShowPayment(false);
       await products.load();

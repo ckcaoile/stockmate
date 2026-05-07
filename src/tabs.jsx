@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
-import { SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, SERVICES, SVC_COL, uid, peso, todayStr, nowTime } from "./core.jsx";
-import { useSerials } from "./core.jsx";
+import { SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, SERVICES, SVC_COL, uid, peso, todayStr, nowTime, useSerials } from "./core.jsx";
 
 // ═══════════════════════════════════════════════════════════════════
 // PRODUCTS TAB
