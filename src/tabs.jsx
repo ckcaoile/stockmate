@@ -564,7 +564,6 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
     </>
   );
 }
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // CUSTOMERS TAB
