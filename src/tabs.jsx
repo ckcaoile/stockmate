@@ -7,7 +7,11 @@ import { SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, SERVICES, SVC_COL, uid, 
 // ═══════════════════════════════════════════════════════════════════
 function SerialsPanel({ product, T, onClose }) {
   const serials = useSerials(product.id);
+  const [mode, setMode]       = useState("scan");   // scan | bulk | list
   const [scanValue, setScanValue] = useState("");
+  const [bulkText, setBulkText]   = useState("");
+  const [bulkResult, setBulkResult] = useState(null); // { added, skipped, dupes }
+  const [importing, setImporting]   = useState(false);
   const scanRef = useRef(null);
 
   const handleScan = async () => {
@@ -17,43 +21,141 @@ function SerialsPanel({ product, T, onClose }) {
     scanRef.current?.focus();
   };
 
+  const handleBulkImport = async () => {
+    const lines = bulkText.split(/[\n,;]+/).map(l=>l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    setImporting(true);
+
+    const existingSerials = new Set(serials.data.map(s=>s.serial));
+    let added = 0, dupes = 0, skipped = 0;
+    const newLines = [...new Set(lines)]; // dedupe within paste
+
+    for (const sn of newLines) {
+      if (existingSerials.has(sn)) { dupes++; continue; }
+      if (sn.length < 3) { skipped++; continue; }
+      await serials.add(sn, product.name, product.id);
+      existingSerials.add(sn);
+      added++;
+    }
+    setBulkResult({ added, dupes, skipped, total: lines.length });
+    setBulkText("");
+    setImporting(false);
+  };
+
+  const available = serials.data.filter(s=>s.status==="available").length;
+  const sold      = serials.data.filter(s=>s.status==="sold").length;
+
   return (
-    <Modal title={`Serials — ${product.name}`} onClose={onClose} T={T} wide>
+    <Modal title={`📦 ${product.name} — Serial Numbers`} onClose={onClose} T={T} wide>
       <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
-        <div style={{ display:"flex",gap:10,alignItems:"flex-end" }}>
-          <div style={{ flex:1 }}>
-            <Inp T={T} label="Scan or type serial number" value={scanValue} onChange={setScanValue} placeholder="Scan barcode or type serial…" autoFocus
-              onKeyDown={e=>{if(e.key==="Enter"){handleScan();}}} />
+
+        {/* Stats bar */}
+        <div style={{ display:"flex",gap:12 }}>
+          <div style={{ flex:1,textAlign:"center",background:"#14532d22",border:"1px solid #14532d55",borderRadius:10,padding:"10px" }}>
+            <div style={{ fontSize:24,fontWeight:800,color:"#4ade80" }}>{available}</div>
+            <div style={{ fontSize:11,color:"#4ade80",opacity:.8 }}>Available</div>
           </div>
-          <Btn T={T} onClick={handleScan} disabled={!scanValue.trim()}>Add Serial</Btn>
+          <div style={{ flex:1,textAlign:"center",background:"#7f1d1d22",border:"1px solid #7f1d1d55",borderRadius:10,padding:"10px" }}>
+            <div style={{ fontSize:24,fontWeight:800,color:"#f87171" }}>{sold}</div>
+            <div style={{ fontSize:11,color:"#f87171",opacity:.8 }}>Sold</div>
+          </div>
+          <div style={{ flex:1,textAlign:"center",background:T.hover,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px" }}>
+            <div style={{ fontSize:24,fontWeight:800,color:T.text }}>{serials.data.length}</div>
+            <div style={{ fontSize:11,color:T.sub }}>Total</div>
+          </div>
         </div>
-        <div style={{ fontSize:13,color:T.sub }}>
-          Available: <strong style={{ color:"#4ade80" }}>{serials.data.filter(s=>s.status==="available").length}</strong> · 
-          Sold: <strong style={{ color:"#f87171" }}>{serials.data.filter(s=>s.status==="sold").length}</strong>
+
+        {/* Mode tabs */}
+        <div style={{ display:"flex",gap:0,background:T.hover,borderRadius:10,padding:3 }}>
+          {[["scan","🔍 Scan / Type One"],["bulk","📋 Bulk Import"],["list","📄 View All"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setMode(k)} style={{ flex:1,padding:"8px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:12,background:mode===k?T.card:"transparent",color:mode===k?T.text:T.sub,boxShadow:mode===k?`0 1px 4px ${T.sh}`:"none" }}>{l}</button>
+          ))}
         </div>
-        <div style={{ maxHeight:350,overflowY:"auto" }}>
-          {serials.data.length===0
-            ? <div style={{ textAlign:"center",padding:20,color:T.muted }}>No serials yet — scan to add</div>
-            : <table style={{ width:"100%",borderCollapse:"collapse",fontSize:13 }}>
-                <thead><tr style={{ borderBottom:`2px solid ${T.border}` }}>
-                  {["Serial","Status","Customer","Date Added",""].map(h=><th key={h} style={{ padding:"6px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em" }}>{h}</th>)}
-                </tr></thead>
-                <tbody>{serials.data.map(s=>(
-                  <tr key={s.id} style={{ borderBottom:`1px solid ${T.border}` }}>
-                    <td style={{ padding:"8px 10px",fontFamily:"monospace",fontSize:12,color:T.accent }}>{s.serial}</td>
-                    <td style={{ padding:"8px 10px" }}>
-                      <span style={{ display:"inline-block",padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:s.status==="available"?"#14532d33":"#7f1d1d33",color:s.status==="available"?"#4ade80":"#f87171",border:`1px solid ${s.status==="available"?"#14532d55":"#7f1d1d55"}` }}>{s.status}</span>
-                    </td>
-                    <td style={{ padding:"8px 10px",color:T.sub,fontSize:12 }}>{s.customerName||"—"}</td>
-                    <td style={{ padding:"8px 10px",color:T.muted,fontSize:11 }}>{s.dateAdded}</td>
-                    <td style={{ padding:"8px 10px" }}>
-                      {s.status==="available" && <Btn T={T} sm v="red" onClick={()=>serials.remove(s.id)}>🗑</Btn>}
-                    </td>
-                  </tr>
-                ))}</tbody>
-              </table>
-          }
-        </div>
+
+        {/* SCAN MODE */}
+        {mode==="scan" && (
+          <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+            <div style={{ fontSize:13,color:T.sub }}>Scan barcode or type serial → press Enter. Keeps focus for rapid scanning.</div>
+            <div style={{ display:"flex",gap:10 }}>
+              <input ref={scanRef} value={scanValue} onChange={e=>setScanValue(e.target.value)} placeholder="Scan or type serial number…" autoFocus
+                onKeyDown={e=>{ if(e.key==="Enter") handleScan(); }}
+                style={{ flex:1,background:T.input,border:`2px solid ${T.accent}55`,borderRadius:8,padding:"11px 14px",color:T.text,fontSize:15,fontFamily:"monospace",outline:"none" }} />
+              <Btn T={T} onClick={handleScan} disabled={!scanValue.trim()}>Add</Btn>
+            </div>
+            {serials.data.slice(0,5).length>0 && (
+              <div style={{ fontSize:12,color:T.sub }}>
+                Last added: {serials.data.slice(0,3).map(s=>(
+                  <span key={s.id} style={{ fontFamily:"monospace",color:T.accent,marginLeft:8 }}>{s.serial}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* BULK IMPORT MODE */}
+        {mode==="bulk" && (
+          <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
+            <div style={{ fontSize:13,color:T.sub }}>
+              Paste serial numbers below — one per line, or separated by commas. Duplicates are automatically skipped.
+            </div>
+            <textarea
+              value={bulkText} onChange={e=>setBulkText(e.target.value)}
+              placeholder={"7740537001234567\n7740537001234568\n7740537001234569\n..."}
+              rows={10} autoFocus
+              style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"12px",color:T.text,fontSize:13,fontFamily:"monospace",outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical",lineHeight:1.6 }}
+            />
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8 }}>
+              <span style={{ fontSize:12,color:T.sub }}>
+                {bulkText.split(/[\n,;]+/).filter(l=>l.trim()).length} serial{bulkText.split(/[\n,;]+/).filter(l=>l.trim()).length!==1?"s":""} detected
+              </span>
+              <Btn T={T} onClick={handleBulkImport} disabled={!bulkText.trim()||importing}>
+                {importing ? "Importing…" : `📥 Import All`}
+              </Btn>
+            </div>
+
+            {bulkResult && (
+              <div style={{ borderRadius:10,overflow:"hidden" }}>
+                <div style={{ background:"#14532d22",border:"1px solid #14532d55",borderRadius:10,padding:14 }}>
+                  <div style={{ fontWeight:700,color:"#4ade80",marginBottom:8,fontSize:14 }}>✅ Import Complete</div>
+                  <div style={{ display:"flex",gap:16,fontSize:13 }}>
+                    <span style={{ color:"#4ade80" }}>✓ Added: <strong>{bulkResult.added}</strong></span>
+                    {bulkResult.dupes>0  && <span style={{ color:"#f59e0b" }}>⟳ Duplicate: <strong>{bulkResult.dupes}</strong></span>}
+                    {bulkResult.skipped>0 && <span style={{ color:"#f87171" }}>✗ Skipped: <strong>{bulkResult.skipped}</strong></span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* LIST MODE */}
+        {mode==="list" && (
+          <div style={{ maxHeight:380,overflowY:"auto" }}>
+            {serials.data.length===0
+              ? <div style={{ textAlign:"center",padding:30,color:T.muted }}>No serials yet</div>
+              : <table style={{ width:"100%",borderCollapse:"collapse",fontSize:13 }}>
+                  <thead><tr style={{ borderBottom:`2px solid ${T.border}`,position:"sticky",top:0,background:T.card }}>
+                    {["Serial Number","Status","Customer","Date Added",""].map(h=>(
+                      <th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em" }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>{serials.data.map(s=>(
+                    <tr key={s.id} style={{ borderBottom:`1px solid ${T.border}` }}>
+                      <td style={{ padding:"8px 10px",fontFamily:"monospace",fontSize:12,color:T.accent }}>{s.serial}</td>
+                      <td style={{ padding:"8px 10px" }}>
+                        <span style={{ display:"inline-block",padding:"2px 8px",borderRadius:10,fontSize:11,fontWeight:700,background:s.status==="available"?"#14532d33":"#7f1d1d33",color:s.status==="available"?"#4ade80":"#f87171",border:`1px solid ${s.status==="available"?"#14532d55":"#7f1d1d55"}` }}>{s.status}</span>
+                      </td>
+                      <td style={{ padding:"8px 10px",color:T.sub,fontSize:12 }}>{s.customerName||"—"}</td>
+                      <td style={{ padding:"8px 10px",color:T.muted,fontSize:11 }}>{s.dateAdded}</td>
+                      <td style={{ padding:"8px 10px" }}>
+                        {s.status==="available" && <Btn T={T} sm v="red" onClick={()=>serials.remove(s.id)}>🗑</Btn>}
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+            }
+          </div>
+        )}
       </div>
     </Modal>
   );
