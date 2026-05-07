@@ -355,7 +355,9 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
   const [amount, setAmount]     = useState("");
   const [monthYear, setMonthYear] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
   const [saving, setSaving]     = useState(false);
-  const [lastTxn, setLastTxn]   = useState(null);
+  const [lastTxn, setLastTxn]       = useState(null);
+  const [showReceipt, setShowReceipt] = useState(null);
+  const [lastReceipt, setLastReceipt] = useState(null);
   const [override, setOverride] = useState(false);
   const [manualName, setManualName]   = useState("");
   const [manualBox, setManualBox]     = useState("");
@@ -389,8 +391,33 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
     const saleData = { id:saleId,customerId:cid,customerName:name,cashierName:profile?.name||"Staff",subtotal:parseFloat(amount),discount:0,total:parseFloat(amount),paymentMethod:"cash",amountTendered:parseFloat(amount),changeAmount:0 };
     const cartItem = [{ id:uid(),type:"satellite",name:`${svc} Load – ${name}`,price:parseFloat(amount),qty:1,service:svc,boxNumber:box,monthYear,satCustomerId:cid,satCustomerName:name }];
     await sales.createSale(saleData, cartItem, []);
-    await transactions.load(); // refresh satellite transactions
-    setLastTxn({ customerName:name,service:svc,boxNumber:box,amount:parseFloat(amount) });
+    await transactions.load();
+    const txnReceipt = {
+      id: saleId,
+      customerName: name,
+      cashierName: profile?.name || "Staff",
+      subtotal: parseFloat(amount),
+      discount: 0,
+      total: parseFloat(amount),
+      paymentMethod: "cash",
+      amountTendered: parseFloat(amount),
+      changeAmount: 0,
+      date: new Date().toISOString().split("T")[0],
+      time: new Date().toLocaleTimeString("en-PH", { hour:"2-digit", minute:"2-digit" }),
+      items: [{
+        product_name: `${svc} Load`,
+        item_type: "satellite",
+        quantity: 1,
+        price: parseFloat(amount),
+        subtotal: parseFloat(amount),
+        service: svc,
+        box_number: box,
+        month_year: monthYear,
+      }]
+    };
+    setLastTxn({ customerName:name, service:svc, boxNumber:box, amount:parseFloat(amount) });
+    setShowReceipt(txnReceipt);
+    setLastReceipt(txnReceipt);
     setAmount(""); setSearch(""); setSelected(null); setManualName(""); setManualBox("");
     setSaving(false);
   };
@@ -400,6 +427,7 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
   const todayTotal = todayTxns.reduce((s,x) => s + x.amount, 0);
 
   return (
+    <>
     <div style={{ display:"grid",gridTemplateColumns:"1fr 320px",gap:20,alignItems:"start" }}>
       <div>
         <Card T={T} style={{ marginBottom:16 }}>
@@ -482,9 +510,15 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
           )}
 
           {lastTxn&&(
-            <div style={{ background:"#14532d22",border:"1px solid #14532d55",borderRadius:10,padding:14,display:"flex",alignItems:"center",gap:12 }}>
-              <span style={{ fontSize:24 }}>✅</span>
-              <div><div style={{ fontWeight:700,color:"#4ade80",fontSize:14 }}>₱{lastTxn.amount} loaded for {lastTxn.customerName}</div><div style={{ fontSize:12,color:T.sub,fontFamily:"monospace" }}>{lastTxn.service} · Box #{lastTxn.boxNumber}</div></div>
+            <div style={{ background:"#14532d22",border:"1px solid #14532d55",borderRadius:10,padding:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" }}>
+              <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+                <span style={{ fontSize:24 }}>✅</span>
+                <div>
+                  <div style={{ fontWeight:700,color:"#4ade80",fontSize:14 }}>₱{lastTxn.amount} loaded for {lastTxn.customerName}</div>
+                  <div style={{ fontSize:12,color:T.sub,fontFamily:"monospace" }}>{lastTxn.service} · Box #{lastTxn.boxNumber}</div>
+                </div>
+              </div>
+              <Btn T={T} v="dark" sm onClick={()=>setShowReceipt(lastReceipt)}>🖨️ Print Receipt</Btn>
             </div>
           )}
         </Card>
@@ -525,7 +559,11 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
         );})}
       </div>
     </div>
+
+    {showReceipt && <Receipt sale={showReceipt} onClose={()=>setShowReceipt(null)} T={T} />}
+    </>
   );
+}
 }
 
 // ═══════════════════════════════════════════════════════════════════
