@@ -242,7 +242,21 @@ function useSales() {
   return { data, loading, load, createSale, voidSale };
 }
 
-function useUsers() {
+function useTransactions() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    const { data:rows } = await supabase.from("transactions").select("*").order("created_at", { ascending:false }).limit(500);
+    if (rows) setData(rows.map(r=>({ id:r.id,customerId:r.customer_id,customerName:r.customer_name,boxNumber:r.box_number,service:r.service,amount:parseFloat(r.amount),monthYear:r.month_year,cashierName:r.cashier_name,date:r.date,time:r.time })));
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const remove = async (id) => {
+    await supabase.from("transactions").delete().eq("id", id);
+    setData(prev => prev.filter(t => t.id !== id));
+  };
+  return { data, loading, load, remove };
+}
   const [data, setData] = useState([]);
   const load = useCallback(async () => {
     const { data:rows } = await supabase.from("user_profiles").select("*").order("created_at");
@@ -442,4 +456,4 @@ function PendingScreen({ auth }) {
   );
 }
 
-export { useAuth, useCustomers, useProducts, useSerials, useSales, useUsers, SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, AuthScreen, PendingScreen, DARK, LIGHT, SERVICES, SVC_COL, todayStr, nowTime, uid, peso, SHOP_NAME };
+export { useAuth, useCustomers, useProducts, useSerials, useSales, useTransactions, useUsers, SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, AuthScreen, PendingScreen, DARK, LIGHT, SERVICES, SVC_COL, todayStr, nowTime, uid, peso, SHOP_NAME };

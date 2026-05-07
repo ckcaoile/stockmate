@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { useAuth, useCustomers, useProducts, useSales, useUsers, AuthScreen, PendingScreen, DARK, LIGHT, SHOP_NAME } from "./core.jsx";
+import { useAuth, useCustomers, useProducts, useSales, useTransactions, useUsers, AuthScreen, PendingScreen, DARK, LIGHT, SHOP_NAME } from "./core.jsx";
 import POSTab from "./POSTab.jsx";
-import { ProductsTab, LoadingTab, CustomersTab, ReportsTab, UsersTab } from "./tabs.jsx";
+import { ProductsTab, LoadingTab, CustomersTab, SalesTab, ReportsTab, UsersTab } from "./tabs.jsx";
 
 const TABS = [
   { key:"pos",       label:"POS",       icon:"🛒", admin:false },
   { key:"loading",   label:"Loading",   icon:"⚡", admin:false },
   { key:"products",  label:"Products",  icon:"📦", admin:false },
   { key:"customers", label:"Customers", icon:"👥", admin:false },
+  { key:"sales",     label:"Sales",     icon:"📋", admin:false },
   { key:"reports",   label:"Reports",   icon:"📊", admin:false },
   { key:"users",     label:"Users",     icon:"🔐", admin:true  },
 ];
@@ -17,11 +18,12 @@ export default function App() {
   const [dark, setDark] = useState(true);
   const T = dark ? DARK : LIGHT;
 
-  const auth      = useAuth();
-  const customers = useCustomers();
-  const products  = useProducts();
-  const sales     = useSales();
-  const users     = useUsers();
+  const auth         = useAuth();
+  const customers    = useCustomers();
+  const products     = useProducts();
+  const sales        = useSales();
+  const transactions = useTransactions();
+  const users        = useUsers();
 
   // ── Auth gates ──────────────────────────────────────────────────
   if (auth.loading) return (
@@ -79,10 +81,11 @@ export default function App() {
 
       {/* Body */}
       <div style={{ maxWidth:1200,margin:"0 auto",padding:"20px 16px" }}>
-        {tab==="pos"       && <POSTab       products={products} customers={customers} sales={sales} profile={auth.profile} T={T} />}
-        {tab==="loading"   && <LoadingTab   customers={customers} sales={sales} profile={auth.profile} T={T} />}
+        {tab==="pos"       && <POSTab       products={products} customers={customers} sales={sales} transactions={transactions} profile={auth.profile} T={T} />}
+        {tab==="loading"   && <LoadingTab   customers={customers} sales={sales} transactions={transactions} profile={auth.profile} T={T} />}
         {tab==="products"  && <ProductsTab  products={products} T={T} />}
         {tab==="customers" && <CustomersTab customers={customers} sales={sales} T={T} />}
+        {tab==="sales"     && <SalesTab     sales={sales} transactions={transactions} T={T} />}
         {tab==="reports"   && <ReportsTab   sales={sales} products={products} T={T} />}
         {tab==="users"     && <UsersTab     users={users} profile={auth.profile} T={T} />}
       </div>

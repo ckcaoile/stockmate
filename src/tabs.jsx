@@ -179,7 +179,7 @@ export function ProductsTab({ products, T }) {
 // ═══════════════════════════════════════════════════════════════════
 // LOADING TAB (quick satellite reload)
 // ═══════════════════════════════════════════════════════════════════
-export function LoadingTab({ customers, sales, profile, T }) {
+export function LoadingTab({ customers, sales, transactions, profile, T }) {
   const [search, setSearch]     = useState("");
   const [selected, setSelected] = useState(null);
   const [amount, setAmount]     = useState("");
@@ -220,13 +220,15 @@ export function LoadingTab({ customers, sales, profile, T }) {
     const saleData = { id:saleId,customerId:cid,customerName:name,cashierName:profile?.name||"Staff",subtotal:parseFloat(amount),discount:0,total:parseFloat(amount),paymentMethod:"cash",amountTendered:parseFloat(amount),changeAmount:0 };
     const cartItem = [{ id:uid(),type:"satellite",name:`${svc} Load – ${name}`,price:parseFloat(amount),qty:1,service:svc,boxNumber:box,monthYear,satCustomerId:cid,satCustomerName:name }];
     await sales.createSale(saleData, cartItem, []);
+    await transactions.load(); // refresh satellite transactions
     setLastTxn({ customerName:name,service:svc,boxNumber:box,amount:parseFloat(amount) });
     setAmount(""); setSearch(""); setSelected(null); setManualName(""); setManualBox("");
     setSaving(false);
   };
 
-  const todayTxns = sales.data.filter(s=>s.date===todayStr());
-  const todayTotal = todayTxns.reduce((s,x)=>s+x.total,0);
+  // Only show satellite transactions in this tab
+  const todayTxns  = transactions.data.filter(t => t.date === todayStr());
+  const todayTotal = todayTxns.reduce((s,x) => s + x.amount, 0);
 
   return (
     <div style={{ display:"grid",gridTemplateColumns:"1fr 320px",gap:20,alignItems:"start" }}>
@@ -324,12 +326,20 @@ export function LoadingTab({ customers, sales, profile, T }) {
             <div style={{ fontWeight:800,color:T.accent,fontSize:20 }}>{peso(todayTotal)}</div>
           </div>
           {todayTxns.length===0
-            ? <div style={{ textAlign:"center",padding:20,color:T.muted,fontSize:13 }}>No transactions today</div>
+            ? <div style={{ textAlign:"center",padding:20,color:T.muted,fontSize:13 }}>No loads today</div>
             : <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-                {todayTxns.map(s=>(
-                  <div key={s.id} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.hover,borderRadius:8,gap:10 }}>
-                    <div><div style={{ fontWeight:600,color:T.text,fontSize:13 }}>{s.customerName}</div><div style={{ fontSize:11,color:T.sub }}>{s.time}</div></div>
-                    <div style={{ fontWeight:800,color:T.accent,fontSize:16 }}>{peso(s.total)}</div>
+                {todayTxns.map(t=>(
+                  <div key={t.id} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.hover,borderRadius:8,gap:10 }}>
+                    <div>
+                      <div style={{ fontWeight:600,color:T.text,fontSize:13 }}>{t.customerName}</div>
+                      <div style={{ fontSize:11,color:T.sub,fontFamily:"monospace" }}>
+                        {t.service} · {t.boxNumber && `Box #${t.boxNumber} · `}{t.time}
+                      </div>
+                    </div>
+                    <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                      {t.service && <SvcBadge service={t.service} T={T} />}
+                      <div style={{ fontWeight:800,color:T.accent,fontSize:16 }}>{peso(t.amount)}</div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -458,6 +468,132 @@ export function CustomersTab({ customers, sales, T }) {
             <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
               <Btn T={T} v="ghost" onClick={()=>{setShowAdd(false);setEditing(null);}}>Cancel</Btn>
               <Btn T={T} onClick={save} disabled={!form.name.trim()}>Save</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SALES TAB — all transactions (products + loads)
+// ═══════════════════════════════════════════════════════════════════
+export function SalesTab({ sales, transactions, T }) {
+  const [view, setView]         = useState("all"); // all | loads | products
+  const [search, setSearch]     = useState("");
+  const [dateFilter, setDate]   = useState("");
+  const [voidConfirm, setVoidConfirm] = useState(null);
+
+  // Merge: product sales + satellite loads into one flat list
+  const allItems = [
+    ...sales.data.map(s => ({
+      id:s.id, type:"sale", name:s.customerName, cashier:s.cashierName,
+      amount:s.total, date:s.date, time:s.time, paymentMethod:s.paymentMethod,
+    })),
+    ...transactions.data.map(t => ({
+      id:t.id, type:"load", name:t.customerName, cashier:t.cashierName,
+      amount:t.amount, date:t.date, time:t.time, service:t.service,
+      boxNumber:t.boxNumber, monthYear:t.monthYear,
+    })),
+  ].sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
+
+  const filtered = allItems.filter(item => {
+    const s = search.toLowerCase();
+    const matchSearch = !search || (item.name||"").toLowerCase().includes(s);
+    const matchDate   = !dateFilter || item.date === dateFilter;
+    const matchView   = view==="all" || (view==="loads" && item.type==="load") || (view==="products" && item.type==="sale");
+    return matchSearch && matchDate && matchView;
+  });
+
+  const todayTotal    = filtered.filter(i=>i.date===todayStr()).reduce((s,i)=>s+i.amount,0);
+  const filteredTotal = filtered.reduce((s,i)=>s+i.amount,0);
+
+  return (
+    <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+      {/* Filters */}
+      <div style={{ display:"flex",gap:8,flexWrap:"wrap",alignItems:"center" }}>
+        <div style={{ display:"flex",gap:0,background:T.hover,borderRadius:10,padding:3 }}>
+          {[["all","All"],["loads","⚡ Loads"],["products","🛒 Products"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setView(k)} style={{ padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:12,background:view===k?T.card:"transparent",color:view===k?T.text:T.sub,boxShadow:view===k?`0 1px 4px ${T.sh}`:"none" }}>{l}</button>
+          ))}
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by customer…"
+          style={{ flex:1,minWidth:160,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none" }} />
+        <input type="date" value={dateFilter} onChange={e=>setDate(e.target.value)}
+          style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none" }} />
+        {dateFilter && <button onClick={()=>setDate("")} style={{ background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:13 }}>✕ Clear</button>}
+      </div>
+
+      {/* Summary */}
+      <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+        <Card T={T} style={{ flex:1,minWidth:120,padding:14,textAlign:"center" }}>
+          <div style={{ fontSize:22,fontWeight:800,color:T.accent }}>{peso(filteredTotal)}</div>
+          <div style={{ fontSize:11,color:T.sub }}>{filtered.length} transactions shown</div>
+        </Card>
+        <Card T={T} style={{ flex:1,minWidth:120,padding:14,textAlign:"center" }}>
+          <div style={{ fontSize:22,fontWeight:800,color:"#4ade80" }}>{peso(todayTotal)}</div>
+          <div style={{ fontSize:11,color:T.sub }}>Today</div>
+        </Card>
+      </div>
+
+      {/* Table */}
+      <Card T={T} style={{ padding:0,overflow:"hidden" }}>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%",borderCollapse:"collapse",fontSize:13 }}>
+            <thead><tr style={{ borderBottom:`2px solid ${T.border}`,background:T.hover }}>
+              {["Type","Date","Time","Customer","Details","Cashier","Amount",""].map(h=>(
+                <th key={h} style={{ padding:"10px 12px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.slice(0,100).map(item=>(
+                <tr key={item.type+item.id} style={{ borderBottom:`1px solid ${T.border}` }}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.hover}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <td style={{ padding:"10px 12px" }}>
+                    {item.type==="load"
+                      ? <SvcBadge service={item.service} T={T} />
+                      : <span style={{ fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:"#374151",color:"#9ca3af" }}>🛒 Sale</span>
+                    }
+                  </td>
+                  <td style={{ padding:"10px 12px",color:T.sub,fontSize:11,whiteSpace:"nowrap" }}>{item.date}</td>
+                  <td style={{ padding:"10px 12px",color:T.muted,fontSize:11 }}>{item.time}</td>
+                  <td style={{ padding:"10px 12px",color:T.text,fontWeight:600 }}>{item.name||"Walk-in"}</td>
+                  <td style={{ padding:"10px 12px",color:T.sub,fontSize:11 }}>
+                    {item.type==="load" ? `Box #${item.boxNumber||"—"} · ${item.monthYear||""}` : item.paymentMethod}
+                  </td>
+                  <td style={{ padding:"10px 12px",color:T.sub,fontSize:12 }}>{item.cashier}</td>
+                  <td style={{ padding:"10px 12px",fontWeight:800,color:T.accent,fontSize:15 }}>{peso(item.amount)}</td>
+                  <td style={{ padding:"10px 12px" }}>
+                    <Btn T={T} sm v="red" onClick={()=>setVoidConfirm(item)}>🚫</Btn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length===0 && <div style={{ textAlign:"center",padding:30,color:T.muted }}>No transactions found</div>}
+          {filtered.length>100 && <div style={{ textAlign:"center",padding:12,color:T.sub,fontSize:12 }}>Showing first 100 — use search or date filter to narrow down</div>}
+        </div>
+      </Card>
+
+      {/* Void confirm */}
+      {voidConfirm && (
+        <Modal title="🚫 Void Transaction" onClose={()=>setVoidConfirm(null)} T={T}>
+          <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+            <div style={{ background:"#7f1d1d22",border:"1px solid #7f1d1d55",borderRadius:10,padding:16 }}>
+              <div style={{ fontWeight:700,color:"#f87171",marginBottom:8 }}>Permanently void this transaction?</div>
+              <div style={{ fontSize:13,color:T.text }}><strong>{voidConfirm.name||"Walk-in"}</strong> — {peso(voidConfirm.amount)}</div>
+              <div style={{ fontSize:12,color:T.sub }}>{voidConfirm.date} {voidConfirm.time}</div>
+              <div style={{ fontSize:12,color:T.sub,marginTop:6 }}>Stock will be restored if applicable. Cannot be undone.</div>
+            </div>
+            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+              <Btn T={T} v="ghost" onClick={()=>setVoidConfirm(null)}>Cancel</Btn>
+              <Btn T={T} v="red" onClick={async()=>{
+                if (voidConfirm.type==="sale") await sales.voidSale(voidConfirm.id);
+                else await transactions.remove(voidConfirm.id);
+                setVoidConfirm(null);
+              }}>🚫 Confirm Void</Btn>
             </div>
           </div>
         </Modal>
