@@ -257,6 +257,8 @@ function useTransactions() {
   };
   return { data, loading, load, remove };
 }
+
+function useUsers() {
   const [data, setData] = useState([]);
   const load = useCallback(async () => {
     const { data:rows } = await supabase.from("user_profiles").select("*").order("created_at");
