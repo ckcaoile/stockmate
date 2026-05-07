@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase.js";
-import { SvcBadge, Btn, Inp, Card, Modal, Receipt, DARK, SERVICES, SVC_COL, uid, peso } from "./core.jsx";
+import { SvcBadge, Btn, Inp, Card, Modal, Receipt, DARK, SERVICES, SVC_COL, uid, peso, lookupSerial } from "./core.jsx";
 
 // Payment modal
 function PaymentModal({ cart, discount, onConfirm, onClose, T }) {
@@ -185,20 +185,24 @@ function SatLoadPicker({ customers, onAdd, onClose, T }) {
 export default function POSTab({ products, customers, sales, profile, T }) {
   const [cart, setCart]         = useState([]);
   const [search, setSearch]     = useState("");
-  const [discount, setDiscount] = useState(0);
+  const [discount,     setDiscount]     = useState(0);
+  const [discountType, setDiscountType] = useState("flat"); // flat | percent
   const [selCustomer, setSelCustomer] = useState(null);
   const [custSearch, setCustSearch]   = useState("");
   const [showCustom, setShowCustom]   = useState(false);
   const [customDesc, setCustomDesc]   = useState("");
   const [customAmt,  setCustomAmt]    = useState("");
   const [showPayment, setShowPayment] = useState(false);
+  const [serialResult, setSerialResult] = useState(null); // found serial info
+  const [serialQty, setSerialQty]       = useState(1);
   const [showSatPicker, setShowSatPicker] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [processing, setProcessing] = useState(false);
   const scanRef = useRef(null);
 
-  const subtotal = cart.reduce((s,i)=>s+i.price*i.qty,0);
-  const total    = Math.max(0, subtotal - discount);
+  const subtotal    = cart.reduce((s,i)=>s+i.price*i.qty, 0);
+  const discountAmt = discountType==="percent" ? subtotal*(discount/100) : (discount||0);
+  const total       = Math.max(0, subtotal - discountAmt);
 
   // Barcode/name search
   const searchResults = search.length>=1 ? products.data.filter(p=>
@@ -206,11 +210,11 @@ export default function POSTab({ products, customers, sales, profile, T }) {
     (p.barcode&&p.barcode.toLowerCase()===search.toLowerCase())
   ).slice(0,8) : [];
 
-  // Exact barcode match → auto-add
+  // Exact barcode match → auto-add; or serial lookup
   useEffect(() => {
-    if (search.length>3) {
-      const exact = products.data.find(p=>p.barcode&&p.barcode===search);
-      if (exact) { addToCart(exact); setSearch(""); }
+    if (search.length > 3) {
+      const exact = products.data.find(p => p.barcode && p.barcode === search);
+      if (exact) { addToCart(exact); setSearch(""); return; }
     }
   }, [search]);
 
@@ -241,12 +245,12 @@ export default function POSTab({ products, customers, sales, profile, T }) {
       const saleId = `SALE-${uid()}`;
       const saleData = {
         id:saleId, customerId:selCustomer?.id||null, customerName:selCustomer?.name||"Walk-in",
-        cashierName:profile?.name||"Staff", subtotal:finalSub, discount, total:finalTotal,
+        cashierName:profile?.name||"Staff", subtotal:finalSub, discount:discountAmt, total:finalTotal,
         paymentMethod:method, amountTendered:tendered, changeAmount:change,
       };
       await sales.createSale(saleData, cart, products.data);
       setLastSale({ ...saleData, date:new Date().toISOString().split("T")[0], time:new Date().toLocaleTimeString(), items: cart.map(it=>({ product_name:it.name.split(" (SN:")[0], item_type:it.type, quantity:it.qty, price:it.price, subtotal:it.price*it.qty, serial_number:it.serial, service:it.service, box_number:it.boxNumber, month_year:it.monthYear, unit:it.unit })) });
-      setCart([]); setDiscount(0); setSelCustomer(null); setCustSearch(""); setShowPayment(false);
+      setCart([]); setDiscount(0); setDiscountType("flat"); setSelCustomer(null); setCustSearch(""); setShowPayment(false);
       await products.load();
     } catch(e) { alert("Error: "+e.message); }
     setProcessing(false);
@@ -266,8 +270,18 @@ export default function POSTab({ products, customers, sales, profile, T }) {
           </div>
           <div style={{ position:"relative" }}>
             <input ref={scanRef} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Product name or barcode…" autoFocus
-              onKeyDown={e=>{if(e.key==="Enter"&&searchResults.length===1){addToCart(searchResults[0]);setSearch("");}}}
-              style={{ width:"100%",boxSizing:"border-box",background:T.input,border:`2px solid ${T.accent}55`,borderRadius:10,padding:"13px 16px",color:T.text,fontSize:16,fontFamily:"inherit",outline:"none" }} />
+              onKeyDown={async e=>{
+                if (e.key==="Enter") {
+                  if (searchResults.length===1) { addToCart(searchResults[0]); setSearch(""); return; }
+                  // Try serial lookup
+                  const found = await lookupSerial(search);
+                  if (found) {
+                    setSerialResult(found);
+                    setSerialQty(1);
+                    setSearch("");
+                  }
+                }
+              }}              style={{ width:"100%",boxSizing:"border-box",background:T.input,border:`2px solid ${T.accent}55`,borderRadius:10,padding:"13px 16px",color:T.text,fontSize:16,fontFamily:"inherit",outline:"none" }} />
             {search && searchResults.length>0 && (
               <div style={{ position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,marginTop:4,overflow:"hidden",boxShadow:`0 8px 24px ${T.sh}` }}>
                 {searchResults.map(p=>(
@@ -290,6 +304,48 @@ export default function POSTab({ products, customers, sales, profile, T }) {
             <Btn T={T} v="dark" onClick={()=>setShowSatPicker(true)} style={{ fontSize:12 }}>📡 Add Satellite Load</Btn>
             <Btn T={T} v="dark" onClick={()=>{ setCustomDesc(""); setCustomAmt(""); setShowCustom(true); }} style={{ fontSize:12 }}>✏️ Custom Charge</Btn>
           </div>
+
+          {/* Serial lookup result */}
+          {serialResult && (() => {
+            const prod = serialResult.product;
+            const isSold = serialResult.status === "sold";
+            return (
+              <div style={{ marginTop:12,border:`2px solid ${isSold?"#f87171":"#4ade80"}44`,borderRadius:12,padding:16,background:isSold?"#7f1d1d0a":"#14532d0a" }}>
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12 }}>
+                  <div>
+                    <div style={{ fontWeight:800,color:T.text,fontSize:16 }}>{prod?.name}</div>
+                    <div style={{ fontFamily:"monospace",fontSize:12,color:T.accent,marginTop:2 }}>SN: {serialResult.serial_number}</div>
+                    <div style={{ fontSize:12,color:T.sub,marginTop:2 }}>{prod?.category}</div>
+                  </div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontWeight:800,color:T.accent,fontSize:18 }}>{peso(prod?.price||0)}</div>
+                    <span style={{ display:"inline-block",marginTop:4,padding:"2px 10px",borderRadius:10,fontSize:11,fontWeight:700,background:isSold?"#7f1d1d33":"#14532d33",color:isSold?"#f87171":"#4ade80",border:`1px solid ${isSold?"#7f1d1d55":"#14532d55"}` }}>
+                      {isSold ? "⚠️ ALREADY SOLD" : "✓ Available"}
+                    </span>
+                  </div>
+                </div>
+                {isSold && (
+                  <div style={{ fontSize:12,color:"#f87171",background:"#7f1d1d22",borderRadius:8,padding:"8px 12px",marginBottom:12 }}>
+                    Sold to: <strong>{serialResult.customer_name||"Unknown"}</strong>{serialResult.date_sold ? ` on ${serialResult.date_sold}` : ""}
+                  </div>
+                )}
+                {!isSold && (
+                  <div style={{ display:"flex",gap:10,alignItems:"center",flexWrap:"wrap" }}>
+                    <span style={{ fontSize:13,color:T.sub }}>Qty:</span>
+                    <input type="number" value={serialQty} min={1} onChange={e=>setSerialQty(Math.max(1,parseInt(e.target.value)||1))}
+                      style={{ width:60,textAlign:"center",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"6px",color:T.text,fontWeight:700,fontSize:14,fontFamily:"inherit",outline:"none" }} />
+                    <Btn T={T} onClick={()=>{
+                      setCart(p=>[...p,{ id:uid(),type:"product",productId:prod.id,name:prod.name,price:prod.price,qty:serialQty,hasSerial:true,serial:serialResult.serial_number,stock:prod.stock,unit:prod.unit||"piece" }]);
+                      setSerialResult(null);
+                      scanRef.current?.focus();
+                    }}>Add to Cart</Btn>
+                    <Btn T={T} v="ghost" onClick={()=>setSerialResult(null)}>Dismiss</Btn>
+                  </div>
+                )}
+                {isSold && <Btn T={T} v="ghost" onClick={()=>setSerialResult(null)}>Dismiss</Btn>}
+              </div>
+            );
+          })()}
         </Card>
 
         {/* Quick product grid */}
@@ -373,16 +429,27 @@ export default function POSTab({ products, customers, sales, profile, T }) {
             </div>
             <div style={{ display:"flex",gap:8,alignItems:"center" }}>
               <span style={{ fontSize:13,color:T.sub,whiteSpace:"nowrap" }}>Discount:</span>
+              <div style={{ display:"flex",gap:0,background:T.hover,borderRadius:6,padding:2 }}>
+                <button onClick={()=>setDiscountType("flat")} style={{ padding:"4px 10px",borderRadius:5,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:11,background:discountType==="flat"?T.accent:"transparent",color:discountType==="flat"?T.atext:T.sub }}>₱</button>
+                <button onClick={()=>setDiscountType("percent")} style={{ padding:"4px 10px",borderRadius:5,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:11,background:discountType==="percent"?T.accent:"transparent",color:discountType==="percent"?T.atext:T.sub }}>%</button>
+              </div>
               <input type="number" value={discount||""} onChange={e=>setDiscount(parseFloat(e.target.value)||0)} placeholder="0"
                 style={{ flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none" }} />
-              <span style={{ fontSize:13,color:T.sub }}>₱</span>
+              {discountType==="percent" && discount>0 && (
+                <span style={{ fontSize:12,color:"#4ade80",whiteSpace:"nowrap",fontWeight:700 }}>-{peso(discountAmt)}</span>
+              )}
             </div>
           </div>
 
           {/* Totals */}
           <div style={{ borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12 }}>
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,color:T.sub,marginBottom:4 }}><span>Subtotal</span><span>{peso(subtotal)}</span></div>
-            {discount>0 && <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,color:"#4ade80",marginBottom:4 }}><span>Discount</span><span>-{peso(discount)}</span></div>}
+            {discountAmt>0 && (
+              <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,color:"#4ade80",marginBottom:4 }}>
+                <span>Discount{discountType==="percent"?` (${discount}%)`:" (flat"}</span>
+                <span>-{peso(discountAmt)}</span>
+              </div>
+            )}
             <div style={{ display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:22,color:T.accent,marginBottom:14 }}><span>TOTAL</span><span>{peso(total)}</span></div>
             <Btn T={T} onClick={()=>setShowPayment(true)} disabled={cart.length===0||processing} style={{ width:"100%",justifyContent:"center",padding:"13px",fontSize:15,fontWeight:800 }}>
               {processing?"Processing…":"💳 Charge / Pay"}
@@ -404,7 +471,7 @@ export default function POSTab({ products, customers, sales, profile, T }) {
         </Card>
       </div>
 
-      {showPayment && <PaymentModal cart={cart} discount={discount} onConfirm={confirmSale} onClose={()=>setShowPayment(false)} T={T} />}
+      {showPayment && <PaymentModal cart={cart} discount={discountAmt} onConfirm={confirmSale} onClose={()=>setShowPayment(false)} T={T} />}
       {showSatPicker && <SatLoadPicker customers={customers.data} onAdd={it=>setCart(p=>[...p,it])} onClose={()=>setShowSatPicker(false)} T={T} />}
       {lastSale && <Receipt sale={lastSale} onClose={()=>setLastSale(null)} T={T} />}
 

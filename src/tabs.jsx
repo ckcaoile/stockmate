@@ -5,12 +5,12 @@ import { SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, SERVICES, SVC_COL, uid, 
 // ═══════════════════════════════════════════════════════════════════
 // PRODUCTS TAB
 // ═══════════════════════════════════════════════════════════════════
-function SerialsPanel({ product, T, onClose }) {
+function SerialsPanel({ product, T, onClose, onRefresh }) {
   const serials = useSerials(product.id);
-  const [mode, setMode]       = useState("scan");   // scan | bulk | list
+  const [mode, setMode]       = useState("scan");
   const [scanValue, setScanValue] = useState("");
   const [bulkText, setBulkText]   = useState("");
-  const [bulkResult, setBulkResult] = useState(null); // { added, skipped, dupes }
+  const [bulkResult, setBulkResult] = useState(null);
   const [importing, setImporting]   = useState(false);
   const scanRef = useRef(null);
 
@@ -19,17 +19,16 @@ function SerialsPanel({ product, T, onClose }) {
     await serials.add(scanValue.trim(), product.name, product.id);
     setScanValue("");
     scanRef.current?.focus();
+    onRefresh?.(); // sync stock in parent
   };
 
   const handleBulkImport = async () => {
     const lines = bulkText.split(/[\n,;]+/).map(l=>l.trim()).filter(Boolean);
     if (!lines.length) return;
     setImporting(true);
-
     const existingSerials = new Set(serials.data.map(s=>s.serial));
     let added = 0, dupes = 0, skipped = 0;
-    const newLines = [...new Set(lines)]; // dedupe within paste
-
+    const newLines = [...new Set(lines)];
     for (const sn of newLines) {
       if (existingSerials.has(sn)) { dupes++; continue; }
       if (sn.length < 3) { skipped++; continue; }
@@ -37,9 +36,15 @@ function SerialsPanel({ product, T, onClose }) {
       existingSerials.add(sn);
       added++;
     }
-    setBulkResult({ added, dupes, skipped, total: lines.length });
+    setBulkResult({ added, dupes, skipped });
     setBulkText("");
     setImporting(false);
+    onRefresh?.(); // sync stock in parent
+  };
+
+  const handleRemove = async (id) => {
+    await serials.remove(id);
+    onRefresh?.();
   };
 
   const available = serials.data.filter(s=>s.status==="available").length;
@@ -148,7 +153,7 @@ function SerialsPanel({ product, T, onClose }) {
                       <td style={{ padding:"8px 10px",color:T.sub,fontSize:12 }}>{s.customerName||"—"}</td>
                       <td style={{ padding:"8px 10px",color:T.muted,fontSize:11 }}>{s.dateAdded}</td>
                       <td style={{ padding:"8px 10px" }}>
-                        {s.status==="available" && <Btn T={T} sm v="red" onClick={()=>serials.remove(s.id)}>🗑</Btn>}
+                        {s.status==="available" && <Btn T={T} sm v="red" onClick={()=>handleRemove(s.id)}>🗑</Btn>}
                       </td>
                     </tr>
                   ))}</tbody>
@@ -167,6 +172,8 @@ export function ProductsTab({ products, T }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewSerials, setViewSerials] = useState(null);
+  const [stockAdjust, setStockAdjust] = useState(null); // { product, delta }
+  const [adjQty, setAdjQty] = useState("");
   const [form, setForm] = useState({ name:"",barcode:"",category:"General",price:"",cost:"",stock:"",hasSerial:false,unit:"piece",notes:"" });
 
   const cats = ["All", ...new Set(products.data.map(p=>p.category))];
@@ -232,7 +239,13 @@ export function ProductsTab({ products, T }) {
                 <td style={{ padding:"10px",fontWeight:700,color:T.accent }}>{peso(p.price)}</td>
                 <td style={{ padding:"10px",color:T.muted,fontSize:12 }}>{peso(p.cost)}</td>
                 <td style={{ padding:"10px" }}>
-                  <span style={{ fontWeight:700,color:p.stock===0?"#f87171":p.stock<5?"#f59e0b":"#4ade80" }}>{p.stock}</span>
+                  {p.hasSerial
+                    ? <Btn T={T} sm v="dark" onClick={()=>setViewSerials(p)}>📋 Manage</Btn>
+                    : <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                        <span style={{ fontWeight:700,color:p.stock===0?"#f87171":p.stock<5?"#f59e0b":"#4ade80" }}>{p.stock}</span>
+                        <Btn T={T} sm v="dark" onClick={()=>{ setStockAdjust(p); setAdjQty(""); }}>+/-</Btn>
+                      </div>
+                  }
                 </td>
                 <td style={{ padding:"10px" }}>
                   {p.hasSerial ? <Btn T={T} sm v="dark" onClick={()=>setViewSerials(p)}>📋 Manage</Btn> : <span style={{ color:T.muted,fontSize:11 }}>—</span>}
@@ -250,7 +263,41 @@ export function ProductsTab({ products, T }) {
         {filtered.length===0 && <div style={{ textAlign:"center",padding:30,color:T.muted }}>No products found</div>}
       </div>
 
-      {viewSerials && <SerialsPanel product={viewSerials} T={T} onClose={()=>setViewSerials(null)} />}
+      {viewSerials && <SerialsPanel product={viewSerials} T={T} onClose={()=>setViewSerials(null)} onRefresh={products.load} />}
+
+      {stockAdjust && (
+        <Modal title={`📦 Adjust Stock — ${stockAdjust.name}`} onClose={()=>setStockAdjust(null)} T={T}>
+          <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+            <div style={{ textAlign:"center",padding:16,background:T.hover,borderRadius:10 }}>
+              <div style={{ fontSize:13,color:T.sub,marginBottom:4 }}>Current Stock</div>
+              <div style={{ fontSize:36,fontWeight:800,color:T.accent }}>{stockAdjust.stock}</div>
+              <div style={{ fontSize:12,color:T.sub }}>{stockAdjust.unit||"piece"}</div>
+            </div>
+            <div>
+              <label style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase",display:"block",marginBottom:6 }}>New Stock Quantity</label>
+              <input type="number" value={adjQty} onChange={e=>setAdjQty(e.target.value)} placeholder={String(stockAdjust.stock)} autoFocus
+                onKeyDown={e=>{ if(e.key==="Enter"&&adjQty!=="") { products.update(stockAdjust.id,{stock:Math.max(0,parseInt(adjQty)||0)}); setStockAdjust(null); }}}
+                style={{ width:"100%",boxSizing:"border-box",background:T.input,border:`2px solid ${T.accent}55`,borderRadius:8,padding:"12px",color:T.text,fontSize:22,fontWeight:700,fontFamily:"inherit",outline:"none",textAlign:"center" }} />
+            </div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+              {[1,5,10,20,50,100].map(n=>(
+                <button key={n} onClick={()=>setAdjQty(String((parseInt(adjQty)||stockAdjust.stock)+n))}
+                  style={{ flex:1,padding:"7px",borderRadius:6,cursor:"pointer",background:T.hover,border:`1px solid ${T.border}`,color:T.sub,fontFamily:"inherit",fontWeight:700,fontSize:12 }}>+{n}</button>
+              ))}
+            </div>
+            <div style={{ display:"flex",gap:6 }}>
+              {[1,5,10].map(n=>(
+                <button key={n} onClick={()=>setAdjQty(String(Math.max(0,(parseInt(adjQty)||stockAdjust.stock)-n)))}
+                  style={{ flex:1,padding:"7px",borderRadius:6,cursor:"pointer",background:"#7f1d1d22",border:"1px solid #7f1d1d55",color:"#f87171",fontFamily:"inherit",fontWeight:700,fontSize:12 }}>-{n}</button>
+              ))}
+            </div>
+            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+              <Btn T={T} v="ghost" onClick={()=>setStockAdjust(null)}>Cancel</Btn>
+              <Btn T={T} disabled={adjQty===""} onClick={()=>{ products.update(stockAdjust.id,{stock:Math.max(0,parseInt(adjQty)||0)}); setStockAdjust(null); }}>Save Stock</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {(showAdd||editing) && (
         <Modal title={editing?"Edit Product":"Add Product"} onClose={()=>{setShowAdd(false);setEditing(null);}} T={T}>

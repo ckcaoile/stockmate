@@ -458,4 +458,14 @@ function PendingScreen({ auth }) {
   );
 }
 
-export { useAuth, useCustomers, useProducts, useSerials, useSales, useTransactions, useUsers, SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, AuthScreen, PendingScreen, DARK, LIGHT, SERVICES, SVC_COL, todayStr, nowTime, uid, peso, SHOP_NAME };
+// Standalone serial lookup — used by POS to search by SN
+async function lookupSerial(serialNumber) {
+  const { data } = await supabase
+    .from("product_serials")
+    .select("*, product:products(*)")
+    .eq("serial_number", serialNumber.trim())
+    .maybeSingle();
+  return data; // null if not found
+}
+
+export { useAuth, useCustomers, useProducts, useSerials, useSales, useTransactions, useUsers, lookupSerial, SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, AuthScreen, PendingScreen, DARK, LIGHT, SERVICES, SVC_COL, todayStr, nowTime, uid, peso, SHOP_NAME };
