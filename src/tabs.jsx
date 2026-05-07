@@ -199,9 +199,23 @@ export function LoadingTab({ customers, sales, profile, T }) {
     const name = override ? manualName.trim() : selected?.name;
     const box  = override ? manualBox.trim()  : selected?.boxNumber;
     const svc  = override ? manualSvc         : selected?.service;
-    const cid  = override ? null              : selected?.id;
+    let   cid  = override ? null              : selected?.id;
     if (!name||!amount) return;
     setSaving(true);
+
+    // Auto-save new customer to DB in manual/override mode
+    if (override && name) {
+      const newId = `CUS-${Date.now()}`;
+      const { supabase } = await import("./supabase.js");
+      const { data:existing } = await supabase.from("customers").select("id").eq("name", name).maybeSingle();
+      if (!existing) {
+        await supabase.from("customers").insert([{ id:newId, name, box_number:box||"", service:svc, date_added:new Date().toISOString().split("T")[0] }]);
+        cid = newId;
+        await customers.load(); // refresh list
+      } else {
+        cid = existing.id;
+      }
+    }
     const saleId = `SALE-${uid()}`;
     const saleData = { id:saleId,customerId:cid,customerName:name,cashierName:profile?.name||"Staff",subtotal:parseFloat(amount),discount:0,total:parseFloat(amount),paymentMethod:"cash",amountTendered:parseFloat(amount),changeAmount:0 };
     const cartItem = [{ id:uid(),type:"satellite",name:`${svc} Load – ${name}`,price:parseFloat(amount),qty:1,service:svc,boxNumber:box,monthYear,satCustomerId:cid,satCustomerName:name }];
@@ -289,7 +303,7 @@ export function LoadingTab({ customers, sales, profile, T }) {
                 <Btn T={T} onClick={processLoad} disabled={!amount||saving} style={{ padding:"11px 28px",fontSize:15,fontWeight:800 }}>{saving?"…":"✓ LOAD"}</Btn>
               </div>
               <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:12 }}>
-                {[15,17,20,22,24,25,26,27,28,29,30,31].map(a=>(
+                {[99,100,175,200,300,450,500,600,800,1000].map(a=>(
                   <button key={a} onClick={()=>setAmount(String(a))} style={{ background:amount===String(a)?T.accent:T.hover,color:amount===String(a)?T.atext:T.sub,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 12px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit" }}>₱{a}</button>
                 ))}
               </div>

@@ -68,22 +68,75 @@ function PaymentModal({ cart, discount, onConfirm, onClose, T }) {
 
 // Satellite load picker for POS
 function SatLoadPicker({ customers, onAdd, onClose, T }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch]   = useState("");
   const [selected, setSelected] = useState(null);
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount]   = useState("");
+  const [service, setService] = useState("GPINOY");
+  const [manualBox, setManualBox] = useState("");
   const [monthYear, setMonthYear] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
+  const [saving, setSaving] = useState(false);
 
   const matched = search.length>=1 ? customers.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||(c.boxNumber||"").includes(search)).slice(0,6) : [];
+  const noMatch = search.length>=2 && matched.length===0;
+
+  const selectCustomer = (c) => {
+    setSelected(c);
+    setSearch(c.name);
+    setService(c.service);
+    setManualBox(c.boxNumber||"");
+  };
+
+  const handleAdd = async () => {
+    if (!search.trim() || !amount) return;
+    setSaving(true);
+    let custId   = selected?.id || null;
+    let custName = selected?.name || search.trim();
+    let box      = selected?.boxNumber || manualBox.trim();
+
+    // Auto-add to DB if no existing customer
+    if (!selected && search.trim()) {
+      const newId = `CUS-${Date.now()}`;
+      const { supabase } = await import("./supabase.js");
+      await supabase.from("customers").insert([{
+        id: newId, name: search.trim(), box_number: manualBox.trim(),
+        service, date_added: new Date().toISOString().split("T")[0],
+      }]);
+      custId = newId;
+    }
+
+    onAdd({
+      id: `${Date.now()}`, type:"satellite",
+      name:`${service} Load – ${custName}`,
+      price:parseFloat(amount), qty:1,
+      service, boxNumber:box,
+      monthYear, satCustomerId:custId, satCustomerName:custName,
+    });
+    setSaving(false);
+    onClose();
+  };
 
   return (
     <Modal title="📡 Add Satellite Load" onClose={onClose} T={T}>
       <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
+
+        {/* Service selector */}
+        <div>
+          <label style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase",display:"block",marginBottom:6 }}>Service</label>
+          <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+            {["GSAT HD","GPINOY","CIGNAL","SATLITE"].map(s=>{
+              const col = SVC_COL[s]||{bg:"#374151"};
+              return <button key={s} onClick={()=>setService(s)} style={{ flex:1,minWidth:80,padding:"8px 6px",borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:12,fontFamily:"inherit",background:service===s?col.bg:"transparent",color:service===s?"#fff":T.sub,border:`2px solid ${service===s?col.bg:T.border}` }}>{s}</button>;
+            })}
+          </div>
+        </div>
+
+        {/* Customer search */}
         <div style={{ position:"relative" }}>
-          <Inp T={T} label="Search Customer" value={search} onChange={v=>{setSearch(v);setSelected(null);}} placeholder="Name or box number…" autoFocus />
+          <Inp T={T} label="Customer Name" value={search} onChange={v=>{setSearch(v);setSelected(null);}} placeholder="Search or type new name…" autoFocus />
           {search && !selected && matched.length>0 && (
-            <div style={{ position:"absolute",top:"100%",left:0,right:0,zIndex:100,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,overflow:"hidden",boxShadow:`0 8px 20px ${T.sh}` }}>
+            <div style={{ position:"absolute",top:"100%",left:0,right:0,zIndex:100,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,overflow:"hidden",boxShadow:`0 8px 20px ${T.sh}`,marginTop:2 }}>
               {matched.map(c=>(
-                <div key={c.id} onClick={()=>{setSelected(c);setSearch(c.name);}} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.border}` }}
+                <div key={c.id} onClick={()=>selectCustomer(c)} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.border}` }}
                   onMouseEnter={e=>e.currentTarget.style.background=T.hover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                   <div><div style={{ fontWeight:700,color:T.text,fontSize:13 }}>{c.name}</div><div style={{ fontSize:11,color:T.sub,fontFamily:"monospace" }}>{c.boxNumber}</div></div>
                   <SvcBadge service={c.service} T={T} />
@@ -91,34 +144,37 @@ function SatLoadPicker({ customers, onAdd, onClose, T }) {
               ))}
             </div>
           )}
-        </div>
-        {selected && (
-          <div style={{ background:T.hover,borderRadius:8,padding:12 }}>
-            <div style={{ fontWeight:700,color:T.text }}>{selected.name}</div>
-            <div style={{ fontFamily:"monospace",fontSize:12,color:T.accent }}>Box #{selected.boxNumber}</div>
-            <SvcBadge service={selected.service} T={T} />
-          </div>
-        )}
-        <div style={{ display:"flex",gap:10 }}>
-          <div style={{ flex:1 }}>
-            <Inp T={T} label="Amount (₱)" value={amount} onChange={setAmount} type="number" placeholder="0" />
-            <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:6 }}>
-              {[15,17,20,22,24,25,26,27,28,29,30,31].map(a=>(
-                <button key={a} onClick={()=>setAmount(String(a))} style={{ padding:"3px 10px",borderRadius:6,cursor:"pointer",background:amount===String(a)?T.accent:T.hover,color:amount===String(a)?T.atext:T.sub,border:`1px solid ${T.border}`,fontFamily:"inherit",fontWeight:600,fontSize:12 }}>₱{a}</button>
-              ))}
+          {noMatch && (
+            <div style={{ marginTop:6,fontSize:12,padding:"6px 10px",borderRadius:6,background:"#f59e0b11",border:"1px solid #f59e0b33",color:T.accent }}>
+              ✨ New customer — will be saved automatically
             </div>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4 }}>Month</div>
-            <input type="month" value={monthYear} onChange={e=>setMonthYear(e.target.value)} style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"9px 12px",color:T.text,fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box" }} />
+          )}
+        </div>
+
+        {/* Box number (editable) */}
+        <Inp T={T} label="Box / Smart Card Number" value={manualBox} onChange={setManualBox} placeholder="Optional — e.g. 7740537035689935" />
+
+        {/* Amount */}
+        <div>
+          <Inp T={T} label="Amount (₱)" value={amount} onChange={setAmount} type="number" placeholder="0" />
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:8 }}>
+            {[99,100,175,200,300,450,500,600,800,1000].map(a=>(
+              <button key={a} onClick={()=>setAmount(String(a))} style={{ padding:"4px 10px",borderRadius:6,cursor:"pointer",background:amount===String(a)?T.accent:T.hover,color:amount===String(a)?T.atext:T.sub,border:`1px solid ${T.border}`,fontFamily:"inherit",fontWeight:600,fontSize:12 }}>₱{a}</button>
+            ))}
           </div>
         </div>
+
+        {/* Month */}
+        <div>
+          <label style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase",display:"block",marginBottom:4 }}>Month</label>
+          <input type="month" value={monthYear} onChange={e=>setMonthYear(e.target.value)} style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"9px 12px",color:T.text,fontSize:14,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box" }} />
+        </div>
+
         <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
           <Btn T={T} v="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn T={T} disabled={!selected||!amount} onClick={()=>{
-            onAdd({ id:uid(),type:"satellite",name:`${selected.service} Load – ${selected.name}`,price:parseFloat(amount),qty:1,service:selected.service,boxNumber:selected.boxNumber,monthYear,satCustomerId:selected.id,satCustomerName:selected.name });
-            onClose();
-          }}>Add to Cart</Btn>
+          <Btn T={T} disabled={!search.trim()||!amount||saving} onClick={handleAdd}>
+            {saving?"Saving…":"Add to Cart"}
+          </Btn>
         </div>
       </div>
     </Modal>
@@ -272,9 +328,13 @@ export default function POSTab({ products, customers, sales, profile, T }) {
                       <div style={{ display:"flex",alignItems:"center",gap:8 }}>
                         {item.type==="product" && !item.hasSerial && (
                           <>
-                            <button onClick={()=>updateQty(item.id,item.qty-1)} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:4,width:24,height:24,cursor:"pointer",color:T.text,fontFamily:"inherit",fontWeight:700 }}>-</button>
-                            <span style={{ color:T.text,fontWeight:600,minWidth:20,textAlign:"center" }}>{item.qty}</span>
-                            <button onClick={()=>updateQty(item.id,item.qty+1)} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:4,width:24,height:24,cursor:"pointer",color:T.text,fontFamily:"inherit",fontWeight:700 }}>+</button>
+                            <button onClick={()=>updateQty(item.id,item.qty-1)} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:4,width:26,height:26,cursor:"pointer",color:T.text,fontFamily:"inherit",fontWeight:700,fontSize:16 }}>-</button>
+                            <input
+                              type="number" value={item.qty} min={1}
+                              onChange={e=>{ const v=parseInt(e.target.value)||1; updateQty(item.id,Math.max(1,v)); }}
+                              style={{ width:48,textAlign:"center",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 4px",color:T.text,fontWeight:700,fontSize:14,fontFamily:"inherit",outline:"none" }}
+                            />
+                            <button onClick={()=>updateQty(item.id,item.qty+1)} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:4,width:26,height:26,cursor:"pointer",color:T.text,fontFamily:"inherit",fontWeight:700,fontSize:16 }}>+</button>
                           </>
                         )}
                         {item.hasSerial && !item.serial && (
