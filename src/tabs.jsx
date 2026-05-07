@@ -469,7 +469,7 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
           ) : (
             <div style={{ display:"flex",flexDirection:"column",gap:12,marginBottom:12 }}>
               <div style={{ fontSize:13,color:T.sub }}>✏️ Enter details manually — useful for walk-ins or transferring old records</div>
-              <Inp T={T} label="Customer Name *" value={manualName} onChange={setManualName} placeholder="e.g. JUAN DELA CRUZ" autoFocus />
+              <Inp T={T} label="Customer Name *" value={manualName} onChange={setManualName} placeholder="e.g. JUAN DELA CRUZ" />
               <Inp T={T} label="Box / Smart Card Number" value={manualBox} onChange={setManualBox} placeholder="e.g. 7740537035689935" />
               <div style={{ display:"flex",flexDirection:"column",gap:4 }}>
                 <label style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase" }}>Service</label>
@@ -483,7 +483,7 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
           )}
 
           {/* Amount + Month + Load button — shown when customer is ready */}
-          {(selected || (override && manualName.trim())) && (
+          {(selected || (override && manualName.trim().length >= 2)) && (
             <div style={{ border:`2px solid ${T.accent}55`,borderRadius:12,padding:16,marginBottom:16,background:T.accent+"0a" }}>
               {selected && (
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
@@ -493,7 +493,7 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
               )}
               <div style={{ display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap" }}>
                 <div style={{ flex:1,minWidth:120 }}>
-                  <Inp T={T} label="Amount (₱)" value={amount} onChange={setAmount} type="number" placeholder="0" onKeyDown={e=>e.key==="Enter"&&processLoad()} autoFocus={override} />
+                  <Inp T={T} label="Amount (₱)" value={amount} onChange={setAmount} type="number" placeholder="0" onKeyDown={e=>e.key==="Enter"&&processLoad()} />
                 </div>
                 <div style={{ flex:1,minWidth:140 }}>
                   <div style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4 }}>Month</div>
@@ -691,12 +691,16 @@ export function SalesTab({ sales, transactions, T }) {
   const [dateFilter, setDate]   = useState("");
   const [voidConfirm, setVoidConfirm] = useState(null);
 
-  // Merge: product sales + satellite loads into one flat list
+  // Merge: product-only sales + satellite transactions (no duplicates)
+  // A "load-only" sale has all items as satellite type — exclude from sales, show only via transactions
   const allItems = [
-    ...sales.data.map(s => ({
-      id:s.id, type:"sale", name:s.customerName, cashier:s.cashierName,
-      amount:s.total, date:s.date, time:s.time, paymentMethod:s.paymentMethod,
-    })),
+    ...sales.data
+      .filter(s => s.items?.length > 0 && s.items.some(i => i.item_type !== "satellite"))
+      .map(s => ({
+        id:s.id, type:"sale", name:s.customerName, cashier:s.cashierName,
+        amount:s.total, date:s.date, time:s.time, paymentMethod:s.paymentMethod,
+        items: s.items,
+      })),
     ...transactions.data.map(t => ({
       id:t.id, type:"load", name:t.customerName, cashier:t.cashierName,
       amount:t.amount, date:t.date, time:t.time, service:t.service,
@@ -812,68 +816,125 @@ export function SalesTab({ sales, transactions, T }) {
 // REPORTS TAB
 // ═══════════════════════════════════════════════════════════════════
 export function ReportsTab({ sales, products, T }) {
-  const [period, setPeriod] = useState("today");
-  const [voidConfirm, setVoidConfirm] = useState(null); // sale to void
+  const [period, setPeriod]     = useState("today");
+  const [catFilter, setCat]     = useState("All");
+  const [productFilter, setProd] = useState("All");
+  const [cashierFilter, setCashier] = useState("All");
 
-  const filterSales = () => {
-    const now = new Date();
-    return sales.data.filter(s=>{
-      const d = new Date(s.date);
-      if (period==="today") return s.date===todayStr();
-      if (period==="week") { const w=new Date(now); w.setDate(w.getDate()-7); return d>=w; }
-      if (period==="month") return s.date?.slice(0,7)===`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-      return true;
+  const now = new Date();
+  const filtered = sales.data.filter(s => {
+    const d = new Date(s.date);
+    const matchPeriod =
+      period==="today" ? s.date===todayStr() :
+      period==="week"  ? d >= new Date(now.getFullYear(), now.getMonth(), now.getDate()-7) :
+      period==="month" ? s.date?.slice(0,7)===`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` :
+      true;
+    const matchCashier = cashierFilter==="All" || s.cashierName===cashierFilter;
+    // Product/category filters check sale items
+    const matchProd = productFilter==="All" || s.items?.some(i=>i.product_name===productFilter);
+    const matchCat  = catFilter==="All" || s.items?.some(i=>{
+      const p = products.data.find(x=>x.name===i.product_name);
+      return p?.category===catFilter;
     });
-  };
+    return matchPeriod && matchCashier && matchProd && matchCat;
+  });
 
-  const filtered = filterSales();
   const totalRevenue = filtered.reduce((s,x)=>s+x.total,0);
-  const avgSale = filtered.length ? totalRevenue/filtered.length : 0;
+  const avgSale      = filtered.length ? totalRevenue/filtered.length : 0;
 
-  // Top products (approximate from sales)
+  // Unique cashiers for filter
+  const cashiers = [...new Set(sales.data.map(s=>s.cashierName).filter(Boolean))];
+  // Unique product names from sale items
+  const productNames = [...new Set(sales.data.flatMap(s=>s.items?.map(i=>i.product_name)||[]).filter(Boolean))];
+  // Unique categories
+  const categories = ["All", ...new Set(products.data.map(p=>p.category).filter(Boolean))];
+
+  // Sales by day
   const byDate = filtered.reduce((acc,s)=>{
-    const k=s.date; if(!acc[k])acc[k]=0; acc[k]+=s.total; return acc;
-  },{});
+    if(s.date){acc[s.date]=(acc[s.date]||0)+s.total;}
+    return acc;
+  }, {});
+
+  // Sales by product (from items)
+  const byProduct = {};
+  filtered.forEach(s=>{ s.items?.forEach(i=>{ if(i.item_type!=="satellite"){ byProduct[i.product_name]=(byProduct[i.product_name]||0)+parseFloat(i.subtotal||0); } }); });
 
   return (
     <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
-      <div style={{ display:"flex",gap:8 }}>
-        {["today","week","month","all"].map(p=>(
-          <button key={p} onClick={()=>setPeriod(p)} style={{ padding:"7px 16px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",background:period===p?T.accent:"transparent",color:period===p?T.atext:T.sub,border:`1px solid ${period===p?T.accent:T.border}`,textTransform:"capitalize" }}>{p==="all"?"All Time":p.charAt(0).toUpperCase()+p.slice(1)}</button>
-        ))}
+      {/* Period selector */}
+      <div style={{ display:"flex",gap:8,flexWrap:"wrap",alignItems:"center" }}>
+        <div style={{ display:"flex",gap:0,background:T.hover,borderRadius:10,padding:3 }}>
+          {[["today","Today"],["week","7 Days"],["month","This Month"],["all","All Time"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setPeriod(k)} style={{ padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:12,background:period===k?T.accent:"transparent",color:period===k?T.atext:T.sub,boxShadow:period===k?`0 1px 4px ${T.sh}`:"none" }}>{l}</button>
+          ))}
+        </div>
+        {/* Category filter */}
+        <select value={catFilter} onChange={e=>setCat(e.target.value)} style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.sub,fontSize:13,fontFamily:"inherit",outline:"none" }}>
+          {categories.map(c=><option key={c} value={c}>{c==="All"?"All Categories":c}</option>)}
+        </select>
+        {/* Product filter */}
+        <select value={productFilter} onChange={e=>setProd(e.target.value)} style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.sub,fontSize:13,fontFamily:"inherit",outline:"none" }}>
+          <option value="All">All Products</option>
+          {productNames.map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+        {/* Cashier filter */}
+        <select value={cashierFilter} onChange={e=>setCashier(e.target.value)} style={{ background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.sub,fontSize:13,fontFamily:"inherit",outline:"none" }}>
+          <option value="All">All Cashiers</option>
+          {cashiers.map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+        {(catFilter!=="All"||productFilter!=="All"||cashierFilter!=="All") && (
+          <button onClick={()=>{setCat("All");setProd("All");setCashier("All");}} style={{ background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.sub,cursor:"pointer",fontFamily:"inherit",fontSize:12 }}>✕ Clear filters</button>
+        )}
       </div>
 
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12 }}>
+      {/* Summary cards */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12 }}>
         {[
           { label:"Revenue",      value:peso(totalRevenue), color:T.accent },
           { label:"Transactions", value:filtered.length,    color:T.text },
           { label:"Avg. Sale",    value:peso(avgSale),      color:"#4ade80" },
-          { label:"Products",     value:products.data.length, color:T.text },
+          { label:"Products",     value:products.data.length,color:T.text },
         ].map(s=>(
-          <Card T={T} key={s.label} style={{ textAlign:"center",padding:20 }}>
-            <div style={{ fontSize:26,fontWeight:800,color:s.color }}>{s.value}</div>
+          <Card T={T} key={s.label} style={{ textAlign:"center",padding:16 }}>
+            <div style={{ fontSize:24,fontWeight:800,color:s.color }}>{s.value}</div>
             <div style={{ fontSize:12,color:T.sub,marginTop:4 }}>{s.label}</div>
           </Card>
         ))}
       </div>
 
-      <Card T={T}>
-        <div style={{ fontWeight:700,color:T.text,fontSize:14,marginBottom:14 }}>Sales by Day</div>
-        {Object.entries(byDate).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,14).map(([date,total])=>(
-          <div key={date} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}` }}>
-            <span style={{ color:T.sub,fontSize:13 }}>{date}</span>
-            <span style={{ fontWeight:700,color:T.accent,fontSize:14 }}>{peso(total)}</span>
-          </div>
-        ))}
-        {Object.keys(byDate).length===0&&<div style={{ textAlign:"center",padding:20,color:T.muted }}>No sales data</div>}
-      </Card>
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
+        {/* Sales by Day */}
+        <Card T={T}>
+          <div style={{ fontWeight:700,color:T.text,fontSize:14,marginBottom:14 }}>Sales by Day</div>
+          {Object.entries(byDate).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,10).map(([date,total])=>(
+            <div key={date} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}` }}>
+              <span style={{ color:T.sub,fontSize:13 }}>{date}</span>
+              <span style={{ fontWeight:700,color:T.accent,fontSize:14 }}>{peso(total)}</span>
+            </div>
+          ))}
+          {Object.keys(byDate).length===0&&<div style={{ textAlign:"center",padding:20,color:T.muted }}>No data</div>}
+        </Card>
 
+        {/* Top Products */}
+        <Card T={T}>
+          <div style={{ fontWeight:700,color:T.text,fontSize:14,marginBottom:14 }}>Top Products</div>
+          {Object.entries(byProduct).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,total])=>(
+            <div key={name} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}` }}>
+              <span style={{ color:T.text,fontSize:13,fontWeight:600 }}>{name}</span>
+              <span style={{ fontWeight:700,color:T.accent,fontSize:14 }}>{peso(total)}</span>
+            </div>
+          ))}
+          {Object.keys(byProduct).length===0&&<div style={{ textAlign:"center",padding:20,color:T.muted }}>No product sales</div>}
+        </Card>
+      </div>
+
+      {/* Recent Transactions — read only, no void */}
       <Card T={T}>
         <div style={{ fontWeight:700,color:T.text,fontSize:14,marginBottom:14 }}>Recent Transactions</div>
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%",borderCollapse:"collapse",fontSize:13 }}>
             <thead><tr style={{ borderBottom:`2px solid ${T.border}` }}>
-              {["Date","Time","Customer","Cashier","Total","Payment",""].map(h=><th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>)}
+              {["Date","Time","Customer","Cashier","Total","Payment"].map(h=><th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>)}
             </tr></thead>
             <tbody>{filtered.slice(0,30).map(s=>(
               <tr key={s.id} style={{ borderBottom:`1px solid ${T.border}` }}>
@@ -883,35 +944,18 @@ export function ReportsTab({ sales, products, T }) {
                 <td style={{ padding:"8px 10px",color:T.sub,fontSize:12 }}>{s.cashierName}</td>
                 <td style={{ padding:"8px 10px",fontWeight:700,color:T.accent }}>{peso(s.total)}</td>
                 <td style={{ padding:"8px 10px",color:T.sub,fontSize:12,textTransform:"capitalize" }}>{s.paymentMethod}</td>
-                <td style={{ padding:"8px 10px" }}>
-                  <Btn T={T} sm v="red" onClick={()=>setVoidConfirm(s)}>🚫 Void</Btn>
-                </td>
               </tr>
             ))}</tbody>
           </table>
+          {filtered.length===0&&<div style={{ textAlign:"center",padding:30,color:T.muted }}>No transactions found</div>}
         </div>
       </Card>
-
-      {/* Void confirm modal */}
-      {voidConfirm && (
-        <Modal title="🚫 Void Sale" onClose={()=>setVoidConfirm(null)} T={T}>
-          <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
-            <div style={{ background:"#7f1d1d22",border:"1px solid #7f1d1d55",borderRadius:10,padding:16 }}>
-              <div style={{ fontWeight:700,color:"#f87171",marginBottom:8 }}>This will permanently void this sale:</div>
-              <div style={{ fontSize:13,color:T.text }}><strong>{voidConfirm.customerName}</strong> — {peso(voidConfirm.total)}</div>
-              <div style={{ fontSize:12,color:T.sub }}>{voidConfirm.date} {voidConfirm.time} · {voidConfirm.cashierName}</div>
-              <div style={{ fontSize:12,color:T.sub,marginTop:8 }}>Stock will be restored automatically. This cannot be undone.</div>
-            </div>
-            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
-              <Btn T={T} v="ghost" onClick={()=>setVoidConfirm(null)}>Cancel</Btn>
-              <Btn T={T} v="red" onClick={async()=>{ await sales.voidSale(voidConfirm.id); setVoidConfirm(null); }}>🚫 Confirm Void</Btn>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// USERS / ADMIN TAB
 
 // ═══════════════════════════════════════════════════════════════════
 // USERS / ADMIN TAB
