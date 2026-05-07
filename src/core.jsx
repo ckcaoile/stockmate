@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS & HELPERS
 // ═══════════════════════════════════════════════════════════════════
-const SHOP_NAME = "CK's Store";
+const SHOP_NAME = "MVC Satellite Cable Trading";
 const SHOP_ADDRESS = "Kabacan, North Cotabato";
 const SHOP_CONTACT = "";
 

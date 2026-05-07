@@ -186,20 +186,28 @@ export function LoadingTab({ customers, sales, profile, T }) {
   const [monthYear, setMonthYear] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
   const [saving, setSaving]     = useState(false);
   const [lastTxn, setLastTxn]   = useState(null);
+  const [override, setOverride] = useState(false);
+  const [manualName, setManualName]   = useState("");
+  const [manualBox, setManualBox]     = useState("");
+  const [manualSvc, setManualSvc]     = useState("GPINOY");
 
   const matched = search.length>=1 ? customers.data.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||(c.boxNumber||"").includes(search)).slice(0,8) : [];
 
   const selectCustomer = (c) => { setSelected(c); setSearch(c.name); setAmount(""); };
 
   const processLoad = async () => {
-    if (!selected||!amount) return;
+    const name = override ? manualName.trim() : selected?.name;
+    const box  = override ? manualBox.trim()  : selected?.boxNumber;
+    const svc  = override ? manualSvc         : selected?.service;
+    const cid  = override ? null              : selected?.id;
+    if (!name||!amount) return;
     setSaving(true);
     const saleId = `SALE-${uid()}`;
-    const saleData = { id:saleId,customerId:selected.id,customerName:selected.name,cashierName:profile?.name||"Staff",subtotal:parseFloat(amount),discount:0,total:parseFloat(amount),paymentMethod:"cash",amountTendered:parseFloat(amount),changeAmount:0 };
-    const cartItem = [{ id:uid(),type:"satellite",name:`${selected.service} Load – ${selected.name}`,price:parseFloat(amount),qty:1,service:selected.service,boxNumber:selected.boxNumber,monthYear,satCustomerId:selected.id,satCustomerName:selected.name }];
+    const saleData = { id:saleId,customerId:cid,customerName:name,cashierName:profile?.name||"Staff",subtotal:parseFloat(amount),discount:0,total:parseFloat(amount),paymentMethod:"cash",amountTendered:parseFloat(amount),changeAmount:0 };
+    const cartItem = [{ id:uid(),type:"satellite",name:`${svc} Load – ${name}`,price:parseFloat(amount),qty:1,service:svc,boxNumber:box,monthYear,satCustomerId:cid,satCustomerName:name }];
     await sales.createSale(saleData, cartItem, []);
-    setLastTxn({ ...saleData,customerName:selected.name,service:selected.service,boxNumber:selected.boxNumber,amount:parseFloat(amount) });
-    setAmount(""); setSearch(""); setSelected(null);
+    setLastTxn({ customerName:name,service:svc,boxNumber:box,amount:parseFloat(amount) });
+    setAmount(""); setSearch(""); setSelected(null); setManualName(""); setManualBox("");
     setSaving(false);
   };
 
@@ -210,31 +218,69 @@ export function LoadingTab({ customers, sales, profile, T }) {
     <div style={{ display:"grid",gridTemplateColumns:"1fr 320px",gap:20,alignItems:"start" }}>
       <div>
         <Card T={T} style={{ marginBottom:16 }}>
-          <div style={{ fontSize:13,color:T.sub,marginBottom:12 }}>🔍 Search customer — no box number needed</div>
-          <div style={{ position:"relative",marginBottom:12 }}>
-            <input value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);}} placeholder="Customer name…" autoFocus
-              style={{ width:"100%",boxSizing:"border-box",background:T.input,border:`2px solid ${selected?T.accent:T.border}`,borderRadius:10,padding:"13px 16px",color:T.text,fontSize:16,fontFamily:"inherit",outline:"none" }} />
-            {search&&!selected&&matched.length>0&&(
-              <div style={{ position:"absolute",top:"100%",left:0,right:0,zIndex:100,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,marginTop:4,overflow:"hidden",boxShadow:`0 8px 24px ${T.sh}` }}>
-                {matched.map(c=>(
-                  <div key={c.id} onClick={()=>selectCustomer(c)} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",cursor:"pointer",borderBottom:`1px solid ${T.border}` }}
-                    onMouseEnter={e=>e.currentTarget.style.background=T.hover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <div><div style={{ fontWeight:700,color:T.text,fontSize:14 }}>{c.name}</div><div style={{ fontSize:12,color:T.sub,fontFamily:"monospace" }}>Box #{c.boxNumber}</div></div>
-                    <SvcBadge service={c.service} T={T} />
-                  </div>
-                ))}
-              </div>
-            )}
+
+          {/* Toggle: registered vs override */}
+          <div style={{ display:"flex",gap:0,marginBottom:16,background:T.hover,borderRadius:10,padding:3 }}>
+            <button onClick={()=>{setOverride(false);setSearch("");setSelected(null);}} style={{ flex:1,padding:"8px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,background:!override?T.card:"transparent",color:!override?T.text:T.sub,boxShadow:!override?`0 1px 4px ${T.sh}`:"none" }}>
+              👥 Registered Customer
+            </button>
+            <button onClick={()=>{setOverride(true);setSearch("");setSelected(null);}} style={{ flex:1,padding:"8px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,background:override?T.card:"transparent",color:override?T.text:T.sub,boxShadow:override?`0 1px 4px ${T.sh}`:"none" }}>
+              ✏️ Manual / Walk-in
+            </button>
           </div>
-          {selected&&(
-            <div style={{ border:`2px solid ${T.accent}55`,borderRadius:12,padding:16,marginBottom:16,background:T.accent+"0a" }}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
-                <div><div style={{ fontSize:20,fontWeight:800,color:T.text }}>{selected.name}</div><div style={{ fontFamily:"monospace",fontSize:14,color:T.accent,marginTop:4 }}>Box #{selected.boxNumber}</div></div>
-                <SvcBadge service={selected.service} T={T} />
+
+          {!override ? (
+            <>
+              <div style={{ fontSize:13,color:T.sub,marginBottom:12 }}>🔍 Search customer — no box number needed</div>
+              <div style={{ position:"relative",marginBottom:12 }}>
+                <input value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);}} placeholder="Customer name or box number…" autoFocus
+                  style={{ width:"100%",boxSizing:"border-box",background:T.input,border:`2px solid ${selected?T.accent:T.border}`,borderRadius:10,padding:"13px 16px",color:T.text,fontSize:16,fontFamily:"inherit",outline:"none" }} />
+                {search&&!selected&&matched.length>0&&(
+                  <div style={{ position:"absolute",top:"100%",left:0,right:0,zIndex:100,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,marginTop:4,overflow:"hidden",boxShadow:`0 8px 24px ${T.sh}` }}>
+                    {matched.map(c=>(
+                      <div key={c.id} onClick={()=>selectCustomer(c)} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",cursor:"pointer",borderBottom:`1px solid ${T.border}` }}
+                        onMouseEnter={e=>e.currentTarget.style.background=T.hover} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        <div><div style={{ fontWeight:700,color:T.text,fontSize:14 }}>{c.name}</div><div style={{ fontSize:12,color:T.sub,fontFamily:"monospace" }}>Box #{c.boxNumber}</div></div>
+                        <SvcBadge service={c.service} T={T} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {search&&!selected&&matched.length===0&&search.length>=2&&(
+                  <div style={{ marginTop:8,fontSize:12,color:T.muted,padding:"8px 12px",background:T.hover,borderRadius:8 }}>
+                    No match found. Switch to <strong style={{ color:T.accent,cursor:"pointer" }} onClick={()=>setOverride(true)}>Manual / Walk-in</strong> to load without a registered account.
+                  </div>
+                )}
               </div>
+            </>
+          ) : (
+            <div style={{ display:"flex",flexDirection:"column",gap:12,marginBottom:12 }}>
+              <div style={{ fontSize:13,color:T.sub }}>✏️ Enter details manually — useful for walk-ins or transferring old records</div>
+              <Inp T={T} label="Customer Name *" value={manualName} onChange={setManualName} placeholder="e.g. JUAN DELA CRUZ" autoFocus />
+              <Inp T={T} label="Box / Smart Card Number" value={manualBox} onChange={setManualBox} placeholder="e.g. 7740537035689935" />
+              <div style={{ display:"flex",flexDirection:"column",gap:4 }}>
+                <label style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase" }}>Service</label>
+                <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+                  {SERVICES.map(s=>{const col=SVC_COL[s];return(
+                    <button key={s} onClick={()=>setManualSvc(s)} style={{ padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",background:manualSvc===s?col.bg:"transparent",color:manualSvc===s?"#fff":T.sub,border:`2px solid ${manualSvc===s?col.bg:T.border}` }}>{s}</button>
+                  );})}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Amount + Month + Load button — shown when customer is ready */}
+          {(selected || (override && manualName.trim())) && (
+            <div style={{ border:`2px solid ${T.accent}55`,borderRadius:12,padding:16,marginBottom:16,background:T.accent+"0a" }}>
+              {selected && (
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+                  <div><div style={{ fontSize:18,fontWeight:800,color:T.text }}>{selected.name}</div><div style={{ fontFamily:"monospace",fontSize:13,color:T.accent,marginTop:2 }}>Box #{selected.boxNumber}</div></div>
+                  <SvcBadge service={selected.service} T={T} />
+                </div>
+              )}
               <div style={{ display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap" }}>
                 <div style={{ flex:1,minWidth:120 }}>
-                  <Inp T={T} label="Amount (₱)" value={amount} onChange={setAmount} type="number" placeholder="0" onKeyDown={e=>e.key==="Enter"&&processLoad()} autoFocus />
+                  <Inp T={T} label="Amount (₱)" value={amount} onChange={setAmount} type="number" placeholder="0" onKeyDown={e=>e.key==="Enter"&&processLoad()} autoFocus={override} />
                 </div>
                 <div style={{ flex:1,minWidth:140 }}>
                   <div style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4 }}>Month</div>
@@ -249,6 +295,7 @@ export function LoadingTab({ customers, sales, profile, T }) {
               </div>
             </div>
           )}
+
           {lastTxn&&(
             <div style={{ background:"#14532d22",border:"1px solid #14532d55",borderRadius:10,padding:14,display:"flex",alignItems:"center",gap:12 }}>
               <span style={{ fontSize:24 }}>✅</span>
@@ -256,6 +303,7 @@ export function LoadingTab({ customers, sales, profile, T }) {
             </div>
           )}
         </Card>
+
         <Card T={T}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
             <div style={{ fontWeight:700,color:T.text,fontSize:14 }}>Today's Loads</div>
@@ -274,12 +322,12 @@ export function LoadingTab({ customers, sales, profile, T }) {
           }
         </Card>
       </div>
+
       <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
         <Card T={T} style={{ textAlign:"center" }}><div style={{ fontSize:28,fontWeight:800,color:T.accent }}>{peso(todayTotal)}</div><div style={{ fontSize:12,color:T.sub }}>Total Today · {todayTxns.length} loads</div></Card>
-        {SERVICES.map(svc=>{const col=SVC_COL[svc];const svcSales=todayTxns.filter(s=>s.items?.some(i=>i.service===svc));const total=svcSales.reduce((s,x)=>s+x.total,0);const cnt=customers.data.filter(c=>c.service===svc).length;return(
+        {SERVICES.map(svc=>{const col=SVC_COL[svc];const cnt=customers.data.filter(c=>c.service===svc).length;return(
           <div key={svc} style={{ background:T.card,border:`1px solid ${col.bg}44`,borderLeft:`4px solid ${col.bg}`,borderRadius:10,padding:14 }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}><SvcBadge service={svc} T={T} /><span style={{ fontSize:18,fontWeight:800,color:col.bg }}>{peso(total)}</span></div>
-            <div style={{ fontSize:12,color:T.sub }}>{cnt} customers</div>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}><SvcBadge service={svc} T={T} /><span style={{ fontSize:12,color:T.sub }}>{cnt} customers</span></div>
           </div>
         );})}
       </div>
