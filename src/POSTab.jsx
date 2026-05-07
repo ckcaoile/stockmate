@@ -188,6 +188,9 @@ export default function POSTab({ products, customers, sales, profile, T }) {
   const [discount, setDiscount] = useState(0);
   const [selCustomer, setSelCustomer] = useState(null);
   const [custSearch, setCustSearch]   = useState("");
+  const [showCustom, setShowCustom]   = useState(false);
+  const [customDesc, setCustomDesc]   = useState("");
+  const [customAmt,  setCustomAmt]    = useState("");
   const [showPayment, setShowPayment] = useState(false);
   const [showSatPicker, setShowSatPicker] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -285,6 +288,7 @@ export default function POSTab({ products, customers, sales, profile, T }) {
           </div>
           <div style={{ display:"flex",gap:8,marginTop:10 }}>
             <Btn T={T} v="dark" onClick={()=>setShowSatPicker(true)} style={{ fontSize:12 }}>📡 Add Satellite Load</Btn>
+            <Btn T={T} v="dark" onClick={()=>{ setCustomDesc(""); setCustomAmt(""); setShowCustom(true); }} style={{ fontSize:12 }}>✏️ Custom Charge</Btn>
           </div>
         </Card>
 
@@ -403,6 +407,34 @@ export default function POSTab({ products, customers, sales, profile, T }) {
       {showPayment && <PaymentModal cart={cart} discount={discount} onConfirm={confirmSale} onClose={()=>setShowPayment(false)} T={T} />}
       {showSatPicker && <SatLoadPicker customers={customers.data} onAdd={it=>setCart(p=>[...p,it])} onClose={()=>setShowSatPicker(false)} T={T} />}
       {lastSale && <Receipt sale={lastSale} onClose={()=>setLastSale(null)} T={T} />}
+
+      {showCustom && (
+        <Modal title="✏️ Custom Charge" onClose={()=>setShowCustom(false)} T={T}>
+          <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
+            <Inp T={T} label="Description *" value={customDesc} onChange={setCustomDesc} placeholder="e.g. Installation Fee, Service Charge…" autoFocus />
+            <div>
+              <Inp T={T} label="Amount (₱) *" value={customAmt} onChange={setCustomAmt} type="number" placeholder="0.00"
+                onKeyDown={e=>{ if(e.key==="Enter"&&customDesc.trim()&&customAmt){ setCart(p=>[...p,{ id:uid(),type:"custom",name:customDesc.trim(),price:parseFloat(customAmt),qty:1 }]); setShowCustom(false); }}} />
+              <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:8 }}>
+                {[50,100,150,200,300,500].map(a=>(
+                  <button key={a} onClick={()=>setCustomAmt(String(a))} style={{ padding:"4px 12px",borderRadius:6,cursor:"pointer",background:customAmt===String(a)?T.accent:T.hover,color:customAmt===String(a)?T.atext:T.sub,border:`1px solid ${T.border}`,fontFamily:"inherit",fontWeight:600,fontSize:12 }}>₱{a}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display:"flex",gap:8,marginBottom:4,flexWrap:"wrap" }}>
+              {["Installation Fee","Service Charge","Delivery Fee","Labor Fee","Miscellaneous"].map(s=>(
+                <button key={s} onClick={()=>setCustomDesc(s)} style={{ padding:"5px 10px",borderRadius:6,cursor:"pointer",background:customDesc===s?T.accent+"22":T.hover,color:customDesc===s?T.accent:T.sub,border:`1px solid ${customDesc===s?T.accent:T.border}`,fontFamily:"inherit",fontSize:12,fontWeight:600 }}>{s}</button>
+              ))}
+            </div>
+            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+              <Btn T={T} v="ghost" onClick={()=>setShowCustom(false)}>Cancel</Btn>
+              <Btn T={T} disabled={!customDesc.trim()||!customAmt} onClick={()=>{ setCart(p=>[...p,{ id:uid(),type:"custom",name:customDesc.trim(),price:parseFloat(customAmt),qty:1 }]); setShowCustom(false); }}>
+                Add to Cart
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
