@@ -409,6 +409,7 @@ export function CustomersTab({ customers, sales, T }) {
 // ═══════════════════════════════════════════════════════════════════
 export function ReportsTab({ sales, products, T }) {
   const [period, setPeriod] = useState("today");
+  const [voidConfirm, setVoidConfirm] = useState(null); // sale to void
 
   const filterSales = () => {
     const now = new Date();
@@ -468,7 +469,7 @@ export function ReportsTab({ sales, products, T }) {
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%",borderCollapse:"collapse",fontSize:13 }}>
             <thead><tr style={{ borderBottom:`2px solid ${T.border}` }}>
-              {["Date","Time","Customer","Cashier","Total","Payment"].map(h=><th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>)}
+              {["Date","Time","Customer","Cashier","Total","Payment",""].map(h=><th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>)}
             </tr></thead>
             <tbody>{filtered.slice(0,30).map(s=>(
               <tr key={s.id} style={{ borderBottom:`1px solid ${T.border}` }}>
@@ -478,11 +479,32 @@ export function ReportsTab({ sales, products, T }) {
                 <td style={{ padding:"8px 10px",color:T.sub,fontSize:12 }}>{s.cashierName}</td>
                 <td style={{ padding:"8px 10px",fontWeight:700,color:T.accent }}>{peso(s.total)}</td>
                 <td style={{ padding:"8px 10px",color:T.sub,fontSize:12,textTransform:"capitalize" }}>{s.paymentMethod}</td>
+                <td style={{ padding:"8px 10px" }}>
+                  <Btn T={T} sm v="red" onClick={()=>setVoidConfirm(s)}>🚫 Void</Btn>
+                </td>
               </tr>
             ))}</tbody>
           </table>
         </div>
       </Card>
+
+      {/* Void confirm modal */}
+      {voidConfirm && (
+        <Modal title="🚫 Void Sale" onClose={()=>setVoidConfirm(null)} T={T}>
+          <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+            <div style={{ background:"#7f1d1d22",border:"1px solid #7f1d1d55",borderRadius:10,padding:16 }}>
+              <div style={{ fontWeight:700,color:"#f87171",marginBottom:8 }}>This will permanently void this sale:</div>
+              <div style={{ fontSize:13,color:T.text }}><strong>{voidConfirm.customerName}</strong> — {peso(voidConfirm.total)}</div>
+              <div style={{ fontSize:12,color:T.sub }}>{voidConfirm.date} {voidConfirm.time} · {voidConfirm.cashierName}</div>
+              <div style={{ fontSize:12,color:T.sub,marginTop:8 }}>Stock will be restored automatically. This cannot be undone.</div>
+            </div>
+            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+              <Btn T={T} v="ghost" onClick={()=>setVoidConfirm(null)}>Cancel</Btn>
+              <Btn T={T} v="red" onClick={async()=>{ await sales.voidSale(voidConfirm.id); setVoidConfirm(null); }}>🚫 Confirm Void</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

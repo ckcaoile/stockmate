@@ -215,7 +215,31 @@ function useSales() {
     return saleRow;
   };
 
-  return { data, loading, load, createSale };
+  const voidSale = async (saleId) => {
+    // Get sale items first to reverse stock/serials
+    const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", saleId);
+    if (items) {
+      for (const it of items) {
+        // Restore serial to available
+        if (it.serial_number && it.item_type === "product") {
+          await supabase.from("product_serials").update({ status:"available", sale_id:null, customer_name:null, date_sold:null }).eq("serial_number", it.serial_number);
+        }
+        // Restore stock for non-serial products
+        if (it.item_type === "product" && !it.serial_number && it.product_id) {
+          const { data: prod } = await supabase.from("products").select("stock").eq("id", it.product_id).single();
+          if (prod) await supabase.from("products").update({ stock: prod.stock + it.quantity }).eq("id", it.product_id);
+        }
+      }
+    }
+    // Delete linked satellite transactions
+    await supabase.from("transactions").delete().eq("sale_id", saleId);
+    // Delete sale items then sale
+    await supabase.from("sale_items").delete().eq("sale_id", saleId);
+    await supabase.from("sales").delete().eq("id", saleId);
+    setData(prev => prev.filter(s => s.id !== saleId));
+  };
+
+  return { data, loading, load, createSale, voidSale };
 }
 
 function useUsers() {
