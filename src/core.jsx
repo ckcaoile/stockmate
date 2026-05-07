@@ -102,12 +102,12 @@ function useProducts() {
   const [data, setData] = useState([]);
   const load = useCallback(async () => {
     const { data:rows } = await supabase.from("products").select("*").order("name");
-    if (rows) setData(rows.map(r => ({ id:r.id,name:r.name,barcode:r.barcode||"",category:r.category||"General",price:parseFloat(r.price),cost:parseFloat(r.cost||0),stock:r.stock||0,hasSerial:r.has_serial,notes:r.notes||"" })));
+    if (rows) setData(rows.map(r => ({ id:r.id,name:r.name,barcode:r.barcode||"",category:r.category||"General",price:parseFloat(r.price),cost:parseFloat(r.cost||0),stock:r.stock||0,hasSerial:r.has_serial,notes:r.notes||"",unit:r.unit||"piece" })));
   }, []);
   useEffect(() => { load(); }, [load]);
-  const add    = async (p) => { await supabase.from("products").insert([{ id:p.id,name:p.name,barcode:p.barcode,category:p.category,price:p.price,cost:p.cost,stock:p.hasSerial?0:p.stock,has_serial:p.hasSerial,notes:p.notes }]); await load(); };
+  const add    = async (p) => { await supabase.from("products").insert([{ id:p.id,name:p.name,barcode:p.barcode,category:p.category,price:p.price,cost:p.cost,stock:p.hasSerial?0:p.stock,has_serial:p.hasSerial,notes:p.notes,unit:p.unit||"piece" }]); await load(); };
   const update = async (id, p) => {
-    const r={}; ["name","barcode","category","price","cost","stock","notes"].forEach(k=>{ if(p[k]!==undefined)r[k]=p[k]; }); if(p.hasSerial!==undefined)r.has_serial=p.hasSerial;
+    const r={}; ["name","barcode","category","price","cost","stock","notes","unit"].forEach(k=>{ if(p[k]!==undefined)r[k]=p[k]; }); if(p.hasSerial!==undefined)r.has_serial=p.hasSerial;
     await supabase.from("products").update(r).eq("id",id); setData(prev=>prev.map(x=>x.id===id?{...x,...p}:x));
   };
   const remove = async (id) => { await supabase.from("products").delete().eq("id",id); setData(prev=>prev.filter(x=>x.id!==id)); };
@@ -356,7 +356,7 @@ function Receipt({ sale, onClose, T }) {
               <div style={{ display:"flex",justifyContent:"space-between",paddingLeft:8,fontSize:11,color:"#333" }}>
                 {it.item_type==="satellite"
                   ? <span>{it.service} · Box #{it.box_number} · {it.month_year}</span>
-                  : <span>x{it.quantity} @ ₱{parseFloat(it.price).toFixed(2)}</span>}
+                  : <span>x{it.quantity} {it.unit||""} @ ₱{parseFloat(it.price).toFixed(2)}</span>}
                 <span>₱{parseFloat(it.subtotal).toFixed(2)}</span>
               </div>
               {it.serial_number && <div style={{ paddingLeft:8,fontSize:10,color:"#555" }}>SN: {it.serial_number}</div>}

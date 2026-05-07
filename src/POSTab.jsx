@@ -17,7 +17,7 @@ function PaymentModal({ cart, discount, onConfirm, onClose, T }) {
         <div style={{ background:T.hover,borderRadius:10,padding:14 }}>
           {cart.map((it,i)=>(
             <div key={i} style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}>
-              <span style={{ color:T.text }}>{it.name} {it.qty>1?`x${it.qty}`:""}</span>
+              <span style={{ color:T.text }}>{it.name} {it.qty>1?`×${it.qty}${it.unit?" "+it.unit:""}`:""}</span>
               <span style={{ color:T.sub }}>{peso(it.price*it.qty)}</span>
             </div>
           ))}
@@ -216,7 +216,7 @@ export default function POSTab({ products, customers, sales, profile, T }) {
     setCart(prev => {
       const exists = prev.find(i=>i.productId===prod.id&&i.type==="product"&&!i.serial);
       if (exists && !prod.hasSerial) return prev.map(i=>i.productId===prod.id?{...i,qty:i.qty+1}:i);
-      return [...prev, { id:uid(),type:"product",productId:prod.id,name:prod.name,price:prod.price,qty:1,hasSerial:prod.hasSerial,serial:null,stock:prod.stock }];
+      return [...prev, { id:uid(),type:"product",productId:prod.id,name:prod.name,price:prod.price,qty:1,hasSerial:prod.hasSerial,serial:null,stock:prod.stock,unit:prod.unit||"piece" }];
     });
     setSearch("");
     scanRef.current?.focus();
@@ -242,7 +242,7 @@ export default function POSTab({ products, customers, sales, profile, T }) {
         paymentMethod:method, amountTendered:tendered, changeAmount:change,
       };
       await sales.createSale(saleData, cart, products.data);
-      setLastSale({ ...saleData, date:new Date().toISOString().split("T")[0], time:new Date().toLocaleTimeString(), items: cart.map(it=>({ product_name:it.name.split(" (SN:")[0], item_type:it.type, quantity:it.qty, price:it.price, subtotal:it.price*it.qty, serial_number:it.serial, service:it.service, box_number:it.boxNumber, month_year:it.monthYear })) });
+      setLastSale({ ...saleData, date:new Date().toISOString().split("T")[0], time:new Date().toLocaleTimeString(), items: cart.map(it=>({ product_name:it.name.split(" (SN:")[0], item_type:it.type, quantity:it.qty, price:it.price, subtotal:it.price*it.qty, serial_number:it.serial, service:it.service, box_number:it.boxNumber, month_year:it.monthYear, unit:it.unit })) });
       setCart([]); setDiscount(0); setSelCustomer(null); setCustSearch(""); setShowPayment(false);
       await products.load();
     } catch(e) { alert("Error: "+e.message); }
@@ -295,9 +295,9 @@ export default function POSTab({ products, customers, sales, profile, T }) {
               <div key={p.id} onClick={()=>addToCart(p)} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:12,cursor:"pointer",transition:"all .15s" }}
                 onMouseEnter={e=>e.currentTarget.style.background=T.hover} onMouseLeave={e=>e.currentTarget.style.background=T.card}>
                 <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:4 }}>{p.name}</div>
-                <div style={{ fontSize:12,color:T.sub,marginBottom:6 }}>{p.category}</div>
-                <div style={{ fontWeight:800,color:T.accent,fontSize:15 }}>{peso(p.price)}</div>
-                <div style={{ fontSize:11,color:p.stock>0?"#4ade80":"#f87171",marginTop:2 }}>Stock: {p.stock}</div>
+                <div style={{ fontSize:11,color:T.sub,marginBottom:4 }}>{p.category}</div>
+                <div style={{ fontWeight:800,color:T.accent,fontSize:15 }}>{peso(p.price)}<span style={{ fontSize:11,color:T.sub,fontWeight:400 }}> /{p.unit||"pc"}</span></div>
+                <div style={{ fontSize:11,color:p.stock>0?"#4ade80":"#f87171",marginTop:2 }}>Stock: {p.stock} {p.unit||"pc"}</div>
               </div>
             ))}
           </div>
@@ -334,6 +334,7 @@ export default function POSTab({ products, customers, sales, profile, T }) {
                               onChange={e=>{ const v=parseInt(e.target.value)||1; updateQty(item.id,Math.max(1,v)); }}
                               style={{ width:48,textAlign:"center",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 4px",color:T.text,fontWeight:700,fontSize:14,fontFamily:"inherit",outline:"none" }}
                             />
+                            <span style={{ fontSize:11,color:T.sub }}>{item.unit||"pc"}</span>
                             <button onClick={()=>updateQty(item.id,item.qty+1)} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:4,width:26,height:26,cursor:"pointer",color:T.text,fontFamily:"inherit",fontWeight:700,fontSize:16 }}>+</button>
                           </>
                         )}

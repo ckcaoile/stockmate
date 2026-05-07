@@ -65,7 +65,7 @@ export function ProductsTab({ products, T }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewSerials, setViewSerials] = useState(null);
-  const [form, setForm] = useState({ name:"",barcode:"",category:"General",price:"",cost:"",stock:"",hasSerial:false,notes:"" });
+  const [form, setForm] = useState({ name:"",barcode:"",category:"General",price:"",cost:"",stock:"",hasSerial:false,unit:"piece",notes:"" });
 
   const cats = ["All", ...new Set(products.data.map(p=>p.category))];
   const filtered = products.data.filter(p => {
@@ -73,12 +73,12 @@ export function ProductsTab({ products, T }) {
     return (p.name.toLowerCase().includes(s)||(p.barcode||"").includes(s)) && (catFilter==="All"||p.category===catFilter);
   });
 
-  const openAdd  = () => { setForm({ name:"",barcode:"",category:"General",price:"",cost:"",stock:"0",hasSerial:false,notes:"" }); setShowAdd(true); };
-  const openEdit = (p) => { setEditing(p); setForm({ name:p.name,barcode:p.barcode,category:p.category,price:String(p.price),cost:String(p.cost),stock:String(p.stock),hasSerial:p.hasSerial,notes:p.notes }); };
+  const openAdd  = () => { setForm({ name:"",barcode:"",category:"General",price:"",cost:"",stock:"0",hasSerial:false,unit:"piece",notes:"" }); setShowAdd(true); };
+  const openEdit = (p) => { setEditing(p); setForm({ name:p.name,barcode:p.barcode,category:p.category,price:String(p.price),cost:String(p.cost),stock:String(p.stock),hasSerial:p.hasSerial,unit:p.unit||"piece",notes:p.notes }); };
 
   const save = async () => {
     if (!form.name.trim()||!form.price) return;
-    const d = { name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim()||"General",price:parseFloat(form.price),cost:parseFloat(form.cost||0),stock:form.hasSerial?0:parseInt(form.stock||0),hasSerial:form.hasSerial,notes:form.notes.trim() };
+    const d = { name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim()||"General",price:parseFloat(form.price),cost:parseFloat(form.cost||0),stock:form.hasSerial?0:parseInt(form.stock||0),hasSerial:form.hasSerial,unit:form.unit||"piece",notes:form.notes.trim() };
     if (editing) { await products.update(editing.id,d); setEditing(null); }
     else { await products.add({ id:`PRD-${uid()}`,...d }); setShowAdd(false); }
   };
@@ -116,7 +116,7 @@ export function ProductsTab({ products, T }) {
       <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%",borderCollapse:"collapse",fontSize:13 }}>
           <thead><tr style={{ borderBottom:`2px solid ${T.border}` }}>
-            {["Name","Barcode","Category","Price","Cost","Stock","Serials",""].map(h=><th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>)}
+            {["Name","Barcode","Category","Unit","Price","Cost","Stock","Serials",""].map(h=><th key={h} style={{ padding:"8px 10px",textAlign:"left",color:T.sub,fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap" }}>{h}</th>)}
           </tr></thead>
           <tbody>
             {filtered.map(p=>(
@@ -124,6 +124,9 @@ export function ProductsTab({ products, T }) {
                 <td style={{ padding:"10px",color:T.text,fontWeight:600 }}>{p.name}</td>
                 <td style={{ padding:"10px",fontFamily:"monospace",fontSize:11,color:T.sub }}>{p.barcode||"—"}</td>
                 <td style={{ padding:"10px",color:T.sub,fontSize:12 }}>{p.category}</td>
+                <td style={{ padding:"10px" }}>
+                  <span style={{ fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:T.hover,color:T.sub,border:`1px solid ${T.border}` }}>{p.unit||"piece"}</span>
+                </td>
                 <td style={{ padding:"10px",fontWeight:700,color:T.accent }}>{peso(p.price)}</td>
                 <td style={{ padding:"10px",color:T.muted,fontSize:12 }}>{peso(p.cost)}</td>
                 <td style={{ padding:"10px" }}>
@@ -156,6 +159,23 @@ export function ProductsTab({ products, T }) {
               <div style={{ flex:1 }}><Inp T={T} label="Category" value={form.category} onChange={v=>setForm(f=>({...f,category:v}))} placeholder="e.g. Accessories" /></div>
               <div style={{ flex:1 }}><Inp T={T} label="Selling Price ₱ *" value={form.price} onChange={v=>setForm(f=>({...f,price:v}))} type="number" /></div>
               <div style={{ flex:1 }}><Inp T={T} label="Cost ₱" value={form.cost} onChange={v=>setForm(f=>({...f,cost:v}))} type="number" /></div>
+            </div>
+
+            {/* Unit selector */}
+            <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+              <label style={{ fontSize:11,fontWeight:700,color:T.sub,letterSpacing:"0.1em",textTransform:"uppercase" }}>Unit of Measurement</label>
+              <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+                {["piece","meter","foot","roll","set","pack","pair","kg","gram","liter","box"].map(u=>(
+                  <button key={u} type="button" onClick={()=>setForm(f=>({...f,unit:u}))} style={{ padding:"6px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12,fontFamily:"inherit",background:form.unit===u?T.accent:"transparent",color:form.unit===u?T.atext:T.sub,border:`2px solid ${form.unit===u?T.accent:T.border}` }}>{u}</button>
+                ))}
+              </div>
+              <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                <span style={{ fontSize:12,color:T.sub }}>Custom:</span>
+                <input value={["piece","meter","foot","roll","set","pack","pair","kg","gram","liter","box"].includes(form.unit)?"":form.unit}
+                  onChange={e=>setForm(f=>({...f,unit:e.target.value}))}
+                  placeholder="e.g. bundle, sack, tube…"
+                  style={{ flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none" }} />
+              </div>
             </div>
             <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px",background:T.hover,borderRadius:8 }}>
               <input type="checkbox" checked={form.hasSerial} onChange={e=>setForm(f=>({...f,hasSerial:e.target.checked}))} style={{ width:16,height:16,cursor:"pointer" }} />
