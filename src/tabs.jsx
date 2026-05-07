@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { supabase } from "./supabase.js";
 import { SvcBadge, Btn, Inp, Sel, Card, Modal, Receipt, SERVICES, SVC_COL, uid, peso, todayStr, nowTime, useSerials } from "./core.jsx";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -206,7 +207,6 @@ export function LoadingTab({ customers, sales, transactions, profile, T }) {
     // Auto-save new customer to DB in manual/override mode
     if (override && name) {
       const newId = `CUS-${Date.now()}`;
-      const { supabase } = await import("./supabase.js");
       const { data:existing } = await supabase.from("customers").select("id").eq("name", name).maybeSingle();
       if (!existing) {
         await supabase.from("customers").insert([{ id:newId, name, box_number:box||"", service:svc, date_added:new Date().toISOString().split("T")[0] }]);

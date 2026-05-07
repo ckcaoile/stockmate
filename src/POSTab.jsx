@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { supabase } from "./supabase.js";
 import { SvcBadge, Btn, Inp, Card, Modal, Receipt, DARK, SERVICES, SVC_COL, uid, peso } from "./core.jsx";
 
 // Payment modal
@@ -96,7 +97,6 @@ function SatLoadPicker({ customers, onAdd, onClose, T }) {
     // Auto-add to DB if no existing customer
     if (!selected && search.trim()) {
       const newId = `CUS-${Date.now()}`;
-      const { supabase } = await import("./supabase.js");
       await supabase.from("customers").insert([{
         id: newId, name: search.trim(), box_number: manualBox.trim(),
         service, date_added: new Date().toISOString().split("T")[0],
